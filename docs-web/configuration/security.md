@@ -38,8 +38,6 @@ We recommend the following for the most secure configuration:
    we recommend [configuring HTTPS](/nginx-ingress-controller/configuration/global-configuration/command-line-arguments/#cmdoption-prometheus-tls-secret) for Prometheus.
 
 ### Snippets
-[Snippets](/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/) 
-is a powerful feature which enable the injection of NGINX config. 
-This can be useful for a proof of concept or debugging. 
-The Snippets feature is disabled by default as it can be used to inject malicious config. 
-We recommend it is not used in production.
+[Snippets](/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/)
+Snippets will be disabled by default in the future. 
+Be sure to understand the implications of configurations you provide through the Snippets capability.
