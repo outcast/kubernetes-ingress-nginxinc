@@ -1,11 +1,7 @@
 # Security
 
-The security of the Ingress Controller is paramount to the success of our Users, and we use the following tools and processes to develop software as securely as possible.
-* [Secure Development Life Cycle](https://www.microsoft.com/en-us/securityengineering/sdl/)
-* [FOSSA](https://fossa.com) for license scanning
-
-However, the Ingress Controller is deployed by a User in their environment, and as such, the User takes responsibility 
-for securing a *deployment* of the Ingress Controller. 
+The security of the Ingress Controller is paramount to the success of our Users, however, the Ingress Controller is deployed by a User in their environment, and as such, the User takes responsibility 
+for securing a deployment of the Ingress Controller. 
 We strongly recommend every User read and understand the following security concerns.
 
 ## Kubernetes
