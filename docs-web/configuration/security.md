@@ -20,9 +20,9 @@ This already provides the least amount of privilege required for the NGINX Ingre
 We strongly recommend inspecting the RBAC configuration (for [manifests installation](https://github.com/nginxinc/kubernetes-ingress/blob/master/deployments/rbac/rbac.yaml)
 or for [helm](https://github.com/nginxinc/kubernetes-ingress/blob/master/deployments/helm-chart/templates/rbac.yaml))
 to understand what access the NGINX Ingress Controller service account has and to which resources.
-For example, by default the service account has access to all Secret resources in the cluster so they can be easily used within your deployments, but your security policies might need this to be restricted to specific secrets.
+For example, by default the service account has access to all Secret resources in the cluster so they can be easily used within your configurations, but your security policies might need this to be restricted to specific secrets.
 
-### Certificates and Privacy Keys
+### Certificates and Private Keys
 
 Secrets are required by the Ingress Controller for some configurations.
 [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) are stored by Kubernetes in an unencrypted way by default.
@@ -38,8 +38,7 @@ we recommend [configuring the Prometheus endpoint using HTTPS](/nginx-ingress-co
 
 ### Snippets
 
-Snippets are a powerful feature necessary to implement some scenarios with the NGINX Ingress Controller.
-[Snippets](/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/)
+Snippets are a powerful feature necessary to implement some scenarios with the NGINX Ingress Controller. See how snippets are used in
+[Ingress](/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/) and [VirtualServer/VirtualServerRoute](/nginx-ingress-controller/configuration/virtualserver-and-virtualserverroute-resources/#using-snippets) resources.
 
-Due to the power of the the snippets capability, we will be disabling it by default in a future release.
-We strongly encourage that you understand the configurations you provide through the snippets capability and we encourage thorough internal code reviews and testing to ensure the resulting configuration is as secure as you intended.
+Due to the power of the the snippets capability, it is disabled by default for VirtualServers/VirtualServerRoutes, and we will disable it by default for Ingresses in a future release. We strongly encourage that you understand the configurations with the snippets capability and we encourage thorough internal reviews and testing to ensure the resulting configuration is as secure as you intended.
