@@ -8,7 +8,7 @@ We strongly recommend every operator read and understand the following items:
 
 We recommend reading and applying practices from the Kubernetes [guide to securing a cluster](https://kubernetes.io/docs/tasks/administer-cluster/securing-a-cluster/).
 
-The NGINX Ingress Controller is deployed within a Kubernetes environment and interacts with the Kubernetes API. Following Kubernetes best practices we recommend:
+NGINX Ingress Controller is deployed within a Kubernetes environment and interacts with the Kubernetes API. Following Kubernetes best practices we recommend:
 
 ### Role based access control (RBAC) and the service account
 
