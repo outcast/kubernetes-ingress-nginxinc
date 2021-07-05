@@ -1,6 +1,6 @@
 # Security
 
-The security of the Ingress Controller is paramount to the success of our customers. When using the NGINX Ingress Controller in your environment we recommend reviewing the following practices to ensure you are securing your deployments.
+The security of the Ingress Controller is paramount to the success of our customers. When using NGINX Ingress Controller in your environment we recommend reviewing the following practices to ensure you are securing your deployments.
 
 We strongly recommend every operator read and understand the following items:
 
