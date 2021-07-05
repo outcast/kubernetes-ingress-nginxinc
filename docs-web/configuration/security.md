@@ -38,7 +38,7 @@ we recommend [configuring the Prometheus endpoint using HTTPS](/nginx-ingress-co
 
 ### Snippets
 
-Snippets are a powerful feature necessary to implement some scenarios with the NGINX Ingress Controller. See how snippets are used in
+Snippets are a powerful feature necessary to implement some scenarios with NGINX Ingress Controller. See how snippets are used in
 [Ingress](/nginx-ingress-controller/configuration/ingress-resources/advanced-configuration-with-snippets/) and [VirtualServer/VirtualServerRoute](/nginx-ingress-controller/configuration/virtualserver-and-virtualserverroute-resources/#using-snippets) resources.
 
 Due to the power of the the snippets capability, it is disabled by default for VirtualServers/VirtualServerRoutes, and we will disable it by default for Ingresses in a future release. We strongly encourage that you understand the configurations with the snippets capability and we encourage thorough internal reviews and testing to ensure the resulting configuration is as secure as you intended.
