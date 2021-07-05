@@ -15,7 +15,7 @@ NGINX Ingress Controller is deployed within a Kubernetes environment and interac
 Kubernetes uses [RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) to control the resources and operations available to different accounts.
 NGINX Ingress Controller requires a service account which should be limited to its lowest necessary privilege.
 We strongly recommend using the [RBAC configuration](https://github.com/nginxinc/kubernetes-ingress/blob/master/deployments/rbac/rbac.yaml) provided in our standard deployment configuration.
-This already provides the least amount of privilege required for the NGINX Ingress Controller.
+This already provides the least amount of privilege required for NGINX Ingress Controller.
 
 We strongly recommend inspecting the RBAC configuration (for [manifests installation](https://github.com/nginxinc/kubernetes-ingress/blob/master/deployments/rbac/rbac.yaml)
 or for [helm](https://github.com/nginxinc/kubernetes-ingress/blob/master/deployments/helm-chart/templates/rbac.yaml))
