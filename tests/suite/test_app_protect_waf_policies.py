@@ -2,14 +2,8 @@ import requests, logging
 import pytest, json
 
 from settings import TEST_DATA, DEPLOYMENTS
-from suite.custom_resources_utils import (
-    create_ap_logconf_from_yaml,
-    create_ap_policy_from_yaml,
-    delete_ap_policy,
-    delete_ap_logconf,
-    create_ap_waf_policy_from_yaml,
-)
 from suite.resources_utils import (
+    delete_items_from_yaml,
     wait_before_test,
     create_items_from_yaml,
     wait_before_test,
@@ -17,21 +11,33 @@ from suite.resources_utils import (
     get_service_endpoint,
 )
 from suite.custom_resources_utils import (
-    read_ap_custom_resource,
     create_crd_from_yaml,
     delete_crd,
-    create_ap_usersig_from_yaml,
-    delete_ap_usersig,
-    delete_and_create_ap_policy_from_yaml,
+)
+from suite.vs_vsr_resources_utils import(
     delete_virtual_server,
     create_virtual_server_from_yaml,
     patch_virtual_server_from_yaml,
     patch_v_s_route_from_yaml,
     create_v_s_route_from_yaml,
     delete_v_s_route,
+)
+from suite.policy_resources_utils import(
     create_policy_from_yaml,
     delete_policy,
     read_policy,
+)
+from suite.ap_resources_utils import (
+    create_ap_usersig_from_yaml,
+    delete_ap_usersig,
+    delete_and_create_ap_policy_from_yaml,
+    read_ap_custom_resource,
+    create_ap_logconf_from_yaml,
+    create_ap_policy_from_yaml,
+    delete_ap_policy,
+    delete_ap_logconf,
+    create_ap_waf_policy_from_yaml,
+    create_ap_multilog_waf_policy_from_yaml,
 )
 from suite.yaml_utils import get_first_ingress_host_from_yaml, get_name_from_yaml
 
@@ -133,7 +139,6 @@ def assert_valid_responses(response) -> None:
                     f"-enable-custom-resources",
                     f"-enable-leader-election=false",
                     f"-enable-app-protect",
-                    f"-enable-preview-policies",
                 ],
             },
             {"example": "ap-waf", "app_type": "simple",},
@@ -307,6 +312,7 @@ class TestAppProtectWAFPolicyVS:
         assert_valid_responses(response1)
         assert_valid_responses(response2)
 
+    @pytest.mark.flaky(max_runs=3)
     def test_ap_waf_policy_logs(
         self,
         kube_apis,
@@ -321,7 +327,7 @@ class TestAppProtectWAFPolicyVS:
         src_syslog_yaml = f"{TEST_DATA}/ap-waf/syslog.yaml"
         log_loc = f"/var/log/messages"
         create_items_from_yaml(kube_apis, src_syslog_yaml, test_namespace)
-        syslog_ep = get_service_endpoint(kube_apis, "syslog-svc", test_namespace)
+        syslog_dst = f"syslog-svc.{test_namespace}"
         syslog_pod = kube_apis.v1.list_namespaced_pod(test_namespace).items[-1].metadata.name
         print(f"Create waf policy")
         create_ap_waf_policy_from_yaml(
@@ -333,7 +339,7 @@ class TestAppProtectWAFPolicyVS:
             True,
             ap_pol_name,
             log_name,
-            f"syslog:server={syslog_ep}:514",
+            f"syslog:server={syslog_dst}:514",
         )
         wait_before_test()
         print(f"Patch vs with policy: {waf_spec_vs_src}")
@@ -358,12 +364,19 @@ class TestAppProtectWAFPolicyVS:
             headers={"host": virtual_server_setup.vs_host},
         )
         print(response.text)
-        wait_before_test(5)
-        log_contents = get_file_contents(kube_apis.v1, log_loc, syslog_pod, test_namespace)
+        log_contents = ""
+        retry = 0
+        while "ASM:attack_type" not in log_contents and retry <= 30:
+            log_contents = get_file_contents(
+                kube_apis.v1, log_loc, syslog_pod, test_namespace
+            )
+            retry += 1
+            wait_before_test(1)
+            print(f"Security log not updated, retrying... #{retry}")
 
         delete_policy(kube_apis.custom_objects, "waf-policy", test_namespace)
         self.restore_default_vs(kube_apis, virtual_server_setup)
-
+        delete_items_from_yaml(kube_apis, src_syslog_yaml, test_namespace)
         assert_invalid_responses(response)
         assert (
             f'ASM:attack_type="Non-browser Client,Abuse of Functionality,Cross Site Scripting (XSS)"'
@@ -373,6 +386,95 @@ class TestAppProtectWAFPolicyVS:
         assert f'request_status="blocked"' in log_contents
         assert f'outcome="REJECTED"' in log_contents
 
+    def test_ap_waf_policy_multi_logs(
+        self,
+        kube_apis,
+        crd_ingress_controller_with_ap,
+        virtual_server_setup,
+        appprotect_setup,
+        test_namespace,
+    ):
+        """
+        Test waf policy logs
+        """
+        src_syslog_yaml = f"{TEST_DATA}/ap-waf/syslog.yaml"
+        src_syslog_yaml_additional = f"{TEST_DATA}/ap-waf/syslog-1.yaml"
+        log_loc = f"/var/log/messages"
+        src_log_yaml_escape = f"{TEST_DATA}/ap-waf/logconf-esc.yaml"
+        log_esc_name = create_ap_logconf_from_yaml(kube_apis.custom_objects, src_log_yaml_escape, test_namespace)
+        create_items_from_yaml(kube_apis, src_syslog_yaml, test_namespace)
+        create_items_from_yaml(kube_apis, src_syslog_yaml_additional, test_namespace)
+        syslog_dst1 = f"syslog-svc.{test_namespace}"
+        syslog_dst2 = f"syslog-svc-1.{test_namespace}"
+        syslog_pod = kube_apis.v1.list_namespaced_pod(test_namespace, label_selector="app=syslog").items
+        syslog_esc_pod = kube_apis.v1.list_namespaced_pod(test_namespace, label_selector="app=syslog-1").items
+        print(f"Create waf policy")
+        create_ap_multilog_waf_policy_from_yaml(
+            kube_apis.custom_objects,
+            waf_pol_dataguard_src,
+            test_namespace,
+            test_namespace,
+            True,
+            True,
+            ap_pol_name,
+            [log_name, log_esc_name],
+            [f"syslog:server={syslog_dst1}:514",f"syslog:server={syslog_dst2}:514"]
+        )
+        wait_before_test()
+        print(f"Patch vs with policy: {waf_spec_vs_src}")
+        patch_virtual_server_from_yaml(
+            kube_apis.custom_objects,
+            virtual_server_setup.vs_name,
+            waf_spec_vs_src,
+            virtual_server_setup.namespace,
+        )
+        wait_before_test()
+        ap_crd_info = read_ap_custom_resource(
+            kube_apis.custom_objects, test_namespace, "appolicies", ap_policy_uds
+        )
+        assert_ap_crd_info(ap_crd_info, ap_policy_uds)
+        wait_before_test(120)
+
+        print(
+            "----------------------- Send request with embedded malicious script----------------------"
+        )
+        response = requests.get(
+            virtual_server_setup.backend_1_url + "</script>",
+            headers={"host": virtual_server_setup.vs_host},
+        )
+        print(response.text)
+        log_contents = ""
+        retry = 0
+        while "ASM:attack_type" not in log_contents and retry <= 30:
+            log_contents = get_file_contents(
+                kube_apis.v1, log_loc, syslog_pod[0].metadata.name, test_namespace
+            )
+            retry += 1
+            wait_before_test(1)
+            print(log_contents)
+            print(f"Security log not updated, retrying... #{retry}")
+
+        log_esc_contents = ""
+        retry = 0
+        while "attack_type" not in log_esc_contents and retry <= 30:
+            log_esc_contents = get_file_contents(
+                kube_apis.v1, log_loc, syslog_esc_pod[0].metadata.name, test_namespace
+            )
+            retry += 1
+            wait_before_test(1)
+            print(log_esc_contents)
+            print(f"Security log not updated, retrying... #{retry}")   
+
+        delete_policy(kube_apis.custom_objects, "waf-policy", test_namespace)
+        self.restore_default_vs(kube_apis, virtual_server_setup)
+
+        assert_invalid_responses(response)
+
+        assert f'ASM:attack_type="Non-browser Client,Abuse of Functionality,Cross Site Scripting (XSS)"' in log_contents
+        assert f'severity="Critical"' in log_contents
+        assert f'request_status="blocked"' in log_contents
+        assert f'outcome="REJECTED"' in log_contents
+        assert f'"my_attack_type": "[Non-browser Client' in log_esc_contents
 
 @pytest.mark.skip_for_nginx_oss
 @pytest.mark.appprotect
@@ -386,7 +488,6 @@ class TestAppProtectWAFPolicyVS:
                     f"-enable-custom-resources",
                     f"-enable-leader-election=false",
                     f"-enable-app-protect",
-                    f"-enable-preview-policies",
                 ],
             },
             {"example": "virtual-server-route"},

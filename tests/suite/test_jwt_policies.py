@@ -9,9 +9,13 @@ from suite.resources_utils import (
 )
 from suite.custom_resources_utils import (
     read_custom_resource,
+)
+from suite.vs_vsr_resources_utils import (
     delete_virtual_server,
     create_virtual_server_from_yaml,
     delete_and_create_vs_from_yaml,
+)
+from suite.policy_resources_utils import (
     create_policy_from_yaml,
     delete_policy,
     read_policy,
@@ -55,7 +59,6 @@ invalid_token = f"{TEST_DATA}/jwt-policy/invalid-token.jwt"
                 "type": "complete",
                 "extra_args": [
                     f"-enable-custom-resources",
-                    f"-enable-preview-policies",
                     f"-enable-leader-election=false",
                 ],
             },

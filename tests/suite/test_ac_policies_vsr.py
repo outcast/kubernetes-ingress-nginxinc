@@ -3,12 +3,17 @@ from kubernetes.client.rest import ApiException
 from suite.resources_utils import wait_before_test, replace_configmap_from_yaml
 from suite.custom_resources_utils import (
     read_custom_resource,
+)
+from suite.vs_vsr_resources_utils import (
     delete_virtual_server,
     create_virtual_server_from_yaml,
     patch_virtual_server_from_yaml,
     patch_v_s_route_from_yaml,
+)
+from suite.policy_resources_utils import (
     create_policy_from_yaml,
     delete_policy,
+    read_policy,
 )
 from settings import TEST_DATA, DEPLOYMENTS
 
@@ -336,7 +341,7 @@ class TestAccessControlPoliciesVsr:
         )
 
     @pytest.mark.parametrize("src", [vs_spec_vsr_override_src, vs_route_vsr_override_src])
-    def test_overide_vs_vsr(
+    def test_override_vs_vsr(
         self,
         kube_apis,
         crd_ingress_controller,

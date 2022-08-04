@@ -4,7 +4,6 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestValidatePort(t *testing.T) {
@@ -125,38 +124,32 @@ func TestValidateLocation(t *testing.T) {
 	}
 }
 
-func TestParseReloadTimeout(t *testing.T) {
-	tests := []struct {
-		timeout           int
-		appProtectEnabled bool
-		expected          time.Duration
-	}{
-		{
-			timeout:           0,
-			appProtectEnabled: true,
-			expected:          20000 * time.Millisecond,
-		},
-		{
-			timeout:           0,
-			appProtectEnabled: false,
-			expected:          4000 * time.Millisecond,
-		},
-		{
-			timeout:           1000,
-			appProtectEnabled: true,
-			expected:          1000 * time.Millisecond,
-		},
-		{
-			timeout:           1000,
-			appProtectEnabled: false,
-			expected:          1000 * time.Millisecond,
-		},
+func TestValidateAppProtectLogLevel(t *testing.T) {
+	badLogLevels := []string{
+		"",
+		"critical",
+		"none",
+		"info;",
+	}
+	for _, badLogLevel := range badLogLevels {
+		err := validateAppProtectLogLevel(badLogLevel)
+		if err == nil {
+			t.Errorf("validateAppProtectLogLevel(%v) returned no error when it should have returned an error", badLogLevel)
+		}
 	}
 
-	for _, test := range tests {
-		result := parseReloadTimeout(test.appProtectEnabled, test.timeout)
-		if result != test.expected {
-			t.Errorf("parseReloadTimeout(%v, %v) returned %v but expected %v", test.appProtectEnabled, test.timeout, result, test.expected)
+	goodLogLevels := []string{
+		"fatal",
+		"Error",
+		"WARN",
+		"info",
+		"debug",
+		"trace",
+	}
+	for _, goodLogLevel := range goodLogLevels {
+		err := validateAppProtectLogLevel(goodLogLevel)
+		if err != nil {
+			t.Errorf("validateAppProtectLogLevel(%v) returned an error when it should have returned no error: %v", goodLogLevel, err)
 		}
 	}
 }

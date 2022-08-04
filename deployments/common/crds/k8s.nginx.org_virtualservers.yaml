@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.6.1
+    controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
   name: virtualservers.k8s.nginx.org
 spec:
@@ -26,6 +26,10 @@ spec:
           type: string
         - jsonPath: .status.externalEndpoints[*].ip
           name: IP
+          type: string
+        - jsonPath: .status.externalEndpoints[*].hostname
+          name: ExternalHostname
+          priority: 1
           type: string
         - jsonPath: .status.externalEndpoints[*].ports
           name: Ports
@@ -51,6 +55,38 @@ spec:
               description: VirtualServerSpec is the spec of the VirtualServer resource.
               type: object
               properties:
+                dos:
+                  type: string
+                externalDNS:
+                  description: ExternalDNS defines externaldns sub-resource of a virtual server.
+                  type: object
+                  properties:
+                    enable:
+                      type: boolean
+                    labels:
+                      description: Labels stores labels defined for the Endpoint
+                      type: object
+                      additionalProperties:
+                        type: string
+                    providerSpecific:
+                      description: ProviderSpecific stores provider specific config
+                      type: array
+                      items:
+                        description: ProviderSpecificProperty defines specific property for using with ExternalDNS sub-resource.
+                        type: object
+                        properties:
+                          name:
+                            description: Name of the property
+                            type: string
+                          value:
+                            description: Value of the property
+                            type: string
+                    recordTTL:
+                      description: TTL for the record
+                      type: integer
+                      format: int64
+                    recordType:
+                      type: string
                 host:
                   type: string
                 http-snippets:
@@ -149,6 +185,8 @@ spec:
                                 type: integer
                               type:
                                 type: string
+                      dos:
+                        type: string
                       errorPages:
                         type: array
                         items:
@@ -475,6 +513,26 @@ spec:
                   description: TLS defines TLS configuration for a VirtualServer.
                   type: object
                   properties:
+                    cert-manager:
+                      description: CertManager defines a cert manager config for a TLS.
+                      type: object
+                      properties:
+                        cluster-issuer:
+                          type: string
+                        common-name:
+                          type: string
+                        duration:
+                          type: string
+                        issuer:
+                          type: string
+                        issuer-group:
+                          type: string
+                        issuer-kind:
+                          type: string
+                        renew-before:
+                          type: string
+                        usages:
+                          type: string
                     redirect:
                       description: TLSRedirect defines a redirect for a TLS.
                       type: object
@@ -521,6 +579,10 @@ spec:
                             type: boolean
                           fails:
                             type: integer
+                          grpcService:
+                            type: string
+                          grpcStatus:
+                            type: integer
                           headers:
                             type: array
                             items:
@@ -535,10 +597,14 @@ spec:
                             type: string
                           jitter:
                             type: string
+                          mandatory:
+                            type: boolean
                           passes:
                             type: integer
                           path:
                             type: string
+                          persistent:
+                            type: boolean
                           port:
                             type: integer
                           read-timeout:
@@ -569,6 +635,8 @@ spec:
                         type: string
                       next-upstream-tries:
                         type: integer
+                      ntlm:
+                        type: boolean
                       port:
                         type: integer
                       queue:
@@ -615,6 +683,8 @@ spec:
                         properties:
                           enable:
                             type: boolean
+                      type:
+                        type: string
                       use-cluster-ip:
                         type: boolean
             status:
@@ -624,9 +694,11 @@ spec:
                 externalEndpoints:
                   type: array
                   items:
-                    description: ExternalEndpoint defines the IP and ports used to connect to this resource.
+                    description: ExternalEndpoint defines the IP/ Hostname and ports used to connect to this resource.
                     type: object
                     properties:
+                      hostname:
+                        type: string
                       ip:
                         type: string
                       ports:

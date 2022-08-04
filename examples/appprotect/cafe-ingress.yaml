@@ -1,4 +1,4 @@
-apiVersion: networking.k8s.io/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: cafe-ingress
@@ -8,7 +8,7 @@ metadata:
     appprotect.f5.com/app-protect-enable: "True"
     appprotect.f5.com/app-protect-security-log-enable: "True"
     appprotect.f5.com/app-protect-security-log: "default/logconf"
-    appprotect.f5.com/app-protect-security-log-destination: "syslog:server=127.0.0.1:514"
+    appprotect.f5.com/app-protect-security-log-destination: "syslog:server=syslog-svc.default:514"
 spec:
   tls:
   - hosts:
@@ -19,10 +19,16 @@ spec:
     http:
       paths:
       - path: /tea
+        pathType: Prefix
         backend:
-          serviceName: tea-svc
-          servicePort: 80
+          service:
+            name: tea-svc
+            port:
+              number: 80
       - path: /coffee
+        pathType: Prefix
         backend:
-          serviceName: coffee-svc
-          servicePort: 80
+          service:
+            name: coffee-svc
+            port:
+              number: 80

@@ -1,4 +1,5 @@
-FROM golang:1.16-alpine as builder
+# syntax=docker/dockerfile:1.4
+FROM golang:1.19-alpine as builder
 
 RUN mkdir /app
 

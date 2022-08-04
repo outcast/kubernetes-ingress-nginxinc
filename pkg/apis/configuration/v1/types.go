@@ -21,6 +21,7 @@ const (
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`,description="Current state of the VirtualServer. If the resource has a valid status, it means it has been validated and accepted by the Ingress Controller."
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.host`
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.status.externalEndpoints[*].ip`
+// +kubebuilder:printcolumn:name="ExternalHostname",priority=1,type=string,JSONPath=`.status.externalEndpoints[*].hostname`
 // +kubebuilder:printcolumn:name="Ports",type=string,JSONPath=`.status.externalEndpoints[*].ports`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
@@ -43,6 +44,34 @@ type VirtualServerSpec struct {
 	Routes         []Route           `json:"routes"`
 	HTTPSnippets   string            `json:"http-snippets"`
 	ServerSnippets string            `json:"server-snippets"`
+	Dos            string            `json:"dos"`
+	ExternalDNS    ExternalDNS       `json:"externalDNS"`
+}
+
+// ExternalDNS defines externaldns sub-resource of a virtual server.
+type ExternalDNS struct {
+	Enable     bool   `json:"enable"`
+	RecordType string `json:"recordType,omitempty"`
+	// TTL for the record
+	RecordTTL int64 `json:"recordTTL,omitempty"`
+	// Labels stores labels defined for the Endpoint
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// ProviderSpecific stores provider specific config
+	// +optional
+	ProviderSpecific ProviderSpecific `json:"providerSpecific,omitempty"`
+}
+
+// ProviderSpecific is a list of properties.
+type ProviderSpecific []ProviderSpecificProperty
+
+// ProviderSpecificProperty defines specific property
+// for using with ExternalDNS sub-resource.
+type ProviderSpecificProperty struct {
+	// Name of the property
+	Name string `json:"name,omitempty"`
+	// Value of the property
+	Value string `json:"value,omitempty"`
 }
 
 // PolicyReference references a policy by name and an optional namespace.
@@ -78,6 +107,8 @@ type Upstream struct {
 	Queue                    *UpstreamQueue    `json:"queue"`
 	SessionCookie            *SessionCookie    `json:"sessionCookie"`
 	UseClusterIP             bool              `json:"use-cluster-ip"`
+	NTLM                     bool              `json:"ntlm"`
+	Type                     string            `json:"type"`
 }
 
 // UpstreamBuffers defines Buffer Configuration for an Upstream.
@@ -106,6 +137,10 @@ type HealthCheck struct {
 	SendTimeout    string       `json:"send-timeout"`
 	Headers        []Header     `json:"headers"`
 	StatusMatch    string       `json:"statusMatch"`
+	GRPCStatus     *int         `json:"grpcStatus"`
+	GRPCService    string       `json:"grpcService"`
+	Mandatory      bool         `json:"mandatory"`
+	Persistent     bool         `json:"persistent"`
 }
 
 // Header defines an HTTP Header.
@@ -135,6 +170,7 @@ type Route struct {
 	Matches          []Match           `json:"matches"`
 	ErrorPages       []ErrorPage       `json:"errorPages"`
 	LocationSnippets string            `json:"location-snippets"`
+	Dos              string            `json:"dos"`
 }
 
 // Action defines an action.
@@ -228,8 +264,9 @@ type ErrorPageRedirect struct {
 
 // TLS defines TLS configuration for a VirtualServer.
 type TLS struct {
-	Secret   string       `json:"secret"`
-	Redirect *TLSRedirect `json:"redirect"`
+	Secret      string       `json:"secret"`
+	Redirect    *TLSRedirect `json:"redirect"`
+	CertManager *CertManager `json:"cert-manager"`
 }
 
 // TLSRedirect defines a redirect for a TLS.
@@ -237,6 +274,18 @@ type TLSRedirect struct {
 	Enable  bool   `json:"enable"`
 	Code    *int   `json:"code"`
 	BasedOn string `json:"basedOn"`
+}
+
+// CertManager defines a cert manager config for a TLS.
+type CertManager struct {
+	ClusterIssuer string `json:"cluster-issuer"`
+	Issuer        string `json:"issuer"`
+	IssuerKind    string `json:"issuer-kind"`
+	IssuerGroup   string `json:"issuer-group"`
+	CommonName    string `json:"common-name"`
+	Duration      string `json:"duration"`
+	RenewBefore   string `json:"renew-before"`
+	Usages        string `json:"usages"`
 }
 
 // VirtualServerStatus defines the status for the VirtualServer resource.
@@ -247,10 +296,11 @@ type VirtualServerStatus struct {
 	ExternalEndpoints []ExternalEndpoint `json:"externalEndpoints,omitempty"`
 }
 
-// ExternalEndpoint defines the IP and ports used to connect to this resource.
+// ExternalEndpoint defines the IP/ Hostname and ports used to connect to this resource.
 type ExternalEndpoint struct {
-	IP    string `json:"ip"`
-	Ports string `json:"ports"`
+	IP       string `json:"ip,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	Ports    string `json:"ports"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -271,6 +321,7 @@ type VirtualServerList struct {
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`,description="Current state of the VirtualServerRoute. If the resource has a valid status, it means it has been validated and accepted by the Ingress Controller."
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.host`
 // +kubebuilder:printcolumn:name="IP",type=string,JSONPath=`.status.externalEndpoints[*].ip`
+// +kubebuilder:printcolumn:name="ExternalHostname",type=string,priority=1,JSONPath=`.status.externalEndpoints[*].hostname`
 // +kubebuilder:printcolumn:name="Ports",type=string,JSONPath=`.status.externalEndpoints[*].ports`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
@@ -293,6 +344,7 @@ type VirtualServerRouteSpec struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// VirtualServerRouteList is a list of VirtualServerRoute
 type VirtualServerRouteList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
@@ -320,6 +372,7 @@ type VirtualServerRouteStatus struct {
 // +kubebuilder:validation:Optional
 // +kubebuilder:resource:shortName=pol
 // +kubebuilder:subresource:status
+// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`,description="Current state of the Policy. If the resource has a valid status, it means it has been validated and accepted by the Ingress Controller."
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
@@ -343,9 +396,11 @@ type PolicyStatus struct {
 // The spec includes multiple fields, where each field represents a different policy.
 // Only one policy (field) is allowed.
 type PolicySpec struct {
+	IngressClass  string         `json:"ingressClassName"`
 	AccessControl *AccessControl `json:"accessControl"`
 	RateLimit     *RateLimit     `json:"rateLimit"`
 	JWTAuth       *JWTAuth       `json:"jwt"`
+	BasicAuth     *BasicAuth     `json:"basicAuth"`
 	IngressMTLS   *IngressMTLS   `json:"ingressMTLS"`
 	EgressMTLS    *EgressMTLS    `json:"egressMTLS"`
 	OIDC          *OIDC          `json:"oidc"`
@@ -363,14 +418,12 @@ type PolicyList struct {
 }
 
 // AccessControl defines an access policy based on the source IP of a request.
-// policy status: production-ready
 type AccessControl struct {
 	Allow []string `json:"allow"`
 	Deny  []string `json:"deny"`
 }
 
 // RateLimit defines a rate limit policy.
-// policy status: preview
 type RateLimit struct {
 	Rate       string `json:"rate"`
 	Key        string `json:"key"`
@@ -384,15 +437,20 @@ type RateLimit struct {
 }
 
 // JWTAuth holds JWT authentication configuration.
-// policy status: preview
 type JWTAuth struct {
 	Realm  string `json:"realm"`
 	Secret string `json:"secret"`
 	Token  string `json:"token"`
 }
 
-// IngressMTLS defines an Ingress MTLS policy.
+// BasicAuth holds HTTP Basic authentication configuration
 // policy status: preview
+type BasicAuth struct {
+	Realm  string `json:"realm"`
+	Secret string `json:"secret"`
+}
+
+// IngressMTLS defines an Ingress MTLS policy.
 type IngressMTLS struct {
 	ClientCertSecret string `json:"clientCertSecret"`
 	VerifyClient     string `json:"verifyClient"`
@@ -400,7 +458,6 @@ type IngressMTLS struct {
 }
 
 // EgressMTLS defines an Egress MTLS policy.
-// policy status: preview
 type EgressMTLS struct {
 	TLSSecret         string `json:"tlsSecret"`
 	VerifyServer      bool   `json:"verifyServer"`
@@ -415,21 +472,22 @@ type EgressMTLS struct {
 
 // OIDC defines an Open ID Connect policy.
 type OIDC struct {
-	AuthEndpoint  string `json:"authEndpoint"`
-	TokenEndpoint string `json:"tokenEndpoint"`
-	JWKSURI       string `json:"jwksURI"`
-	ClientID      string `json:"clientID"`
-	ClientSecret  string `json:"clientSecret"`
-	Scope         string `json:"scope"`
-	RedirectURI   string `json:"redirectURI"`
+	AuthEndpoint   string `json:"authEndpoint"`
+	TokenEndpoint  string `json:"tokenEndpoint"`
+	JWKSURI        string `json:"jwksURI"`
+	ClientID       string `json:"clientID"`
+	ClientSecret   string `json:"clientSecret"`
+	Scope          string `json:"scope"`
+	RedirectURI    string `json:"redirectURI"`
+	ZoneSyncLeeway *int   `json:"zoneSyncLeeway"`
 }
 
 // WAF defines an WAF policy.
-// policy status: preview
 type WAF struct {
-	Enable      bool         `json:"enable"`
-	ApPolicy    string       `json:"apPolicy"`
-	SecurityLog *SecurityLog `json:"securityLog"`
+	Enable       bool           `json:"enable"`
+	ApPolicy     string         `json:"apPolicy"`
+	SecurityLog  *SecurityLog   `json:"securityLog"`
+	SecurityLogs []*SecurityLog `json:"securityLogs"`
 }
 
 // SecurityLog defines the security log of a WAF policy.

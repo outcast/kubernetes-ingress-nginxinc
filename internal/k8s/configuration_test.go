@@ -9,32 +9,36 @@ import (
 	conf_v1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1"
 	conf_v1alpha1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1alpha1"
 	"github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/validation"
-	networking "k8s.io/api/networking/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func createTestConfiguration() *Configuration {
 	lbc := LoadBalancerController{
-		ingressClass:        "nginx",
-		useIngressClassOnly: true,
+		ingressClass: "nginx",
 	}
 	isPlus := false
 	appProtectEnabled := false
+	appProtectDosEnabled := false
 	internalRoutesEnabled := false
 	isTLSPassthroughEnabled := true
+	certManagerEnabled := true
 	snippetsEnabled := true
 	return NewConfiguration(
 		lbc.HasCorrectIngressClass,
 		isPlus,
 		appProtectEnabled,
+		appProtectDosEnabled,
 		internalRoutesEnabled,
-		validation.NewVirtualServerValidator(isTLSPassthroughEnabled),
+		validation.NewVirtualServerValidator(validation.IsPlus(isTLSPassthroughEnabled), validation.IsDosEnabled(appProtectDosEnabled), validation.IsCertManagerEnabled(certManagerEnabled)),
 		validation.NewGlobalConfigurationValidator(map[int]bool{
 			80:  true,
 			443: true,
 		}),
 		validation.NewTransportServerValidator(isTLSPassthroughEnabled, snippetsEnabled, isPlus),
 		isTLSPassthroughEnabled,
+		snippetsEnabled,
+		certManagerEnabled,
 	)
 }
 
@@ -2295,6 +2299,8 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	}
 	gc := createTestGlobalConfiguration(listeners)
 
+	var nilGC *conf_v1alpha1.GlobalConfiguration
+
 	var expectedChanges []ResourceChange
 	var expectedProblems []ConfigurationProblem
 
@@ -2332,6 +2338,10 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
 		t.Errorf("AddOrUpdateTransportServer() returned unexpected result (-want +got):\n%s", diff)
 	}
+	storedGC := configuration.GetGlobalConfiguration()
+	if diff := cmp.Diff(gc, storedGC); diff != "" {
+		t.Errorf("GetGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
+	}
 
 	// Update GlobalConfiguration
 
@@ -2359,6 +2369,10 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	if err != nil {
 		t.Errorf("AddOrUpdateGlobalConfiguration() returned unexpected error: %v", err)
 	}
+	storedGC = configuration.GetGlobalConfiguration()
+	if diff := cmp.Diff(updatedGC1, storedGC); diff != "" {
+		t.Errorf("GetGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
+	}
 
 	// Add second TransportServer
 
@@ -2383,7 +2397,7 @@ func TestAddGlobalConfiguration(t *testing.T) {
 
 	// Swap listeners
 
-	// We need to hanlde this case in Controller propoperly - update config for all TransportServers and reload once
+	// We need to handle this case in Controller propoperly - update config for all TransportServers and reload once
 	// to avoid any race conditions
 	// and errors like nginx: [emerg] duplicate "0.0.0.0:8888" address and port pair in /etc/nginx/nginx.conf:73
 
@@ -2467,6 +2481,10 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	if err.Error() != expectedErrMsg {
 		t.Errorf("AddOrUpdateGlobalConfiguration() returned error %v but expected %v", err, expectedErrMsg)
 	}
+	storedGC = configuration.GetGlobalConfiguration()
+	if diff := cmp.Diff(nilGC, storedGC); diff != "" {
+		t.Errorf("GetGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
+	}
 
 	// Restore
 
@@ -2497,6 +2515,10 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	}
 	if err != nil {
 		t.Errorf("AddOrUpdateGlobalConfiguration() returned unexpected error: %v", err)
+	}
+	storedGC = configuration.GetGlobalConfiguration()
+	if diff := cmp.Diff(updatedGC2, storedGC); diff != "" {
+		t.Errorf("GetGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
 	}
 
 	// Delete GlobalConfiguration
@@ -2538,6 +2560,10 @@ func TestAddGlobalConfiguration(t *testing.T) {
 	}
 	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
 		t.Errorf("DeleteGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
+	}
+	storedGC = configuration.GetGlobalConfiguration()
+	if diff := cmp.Diff(nilGC, storedGC); diff != "" {
+		t.Errorf("GetGlobalConfiguration() returned unexpected result (-want +got):\n%s", diff)
 	}
 }
 
@@ -2651,6 +2677,88 @@ func TestPortCollisions(t *testing.T) {
 	}
 }
 
+func TestChallengeIngressToVSR(t *testing.T) {
+	configuration := createTestConfiguration()
+
+	var expectedProblems []ConfigurationProblem
+
+	// Add a new Ingress
+
+	vs := createTestVirtualServer("virtualserver", "foo.example.com")
+	vsr1 := createTestChallengeVirtualServerRoute("challenge", "foo.example.com", "/.well-known/acme-challenge/test")
+
+	ing := createTestChallengeIngress("challenge", "foo.example.com", "/.well-known/acme-challenge/test", "cm-acme-http-solver-test")
+
+	expectedChanges := []ResourceChange{
+		{
+			Op: AddOrUpdate,
+			Resource: &VirtualServerConfiguration{
+				VirtualServer:       vs,
+				VirtualServerRoutes: []*conf_v1.VirtualServerRoute{vsr1},
+				Warnings:            nil,
+			},
+		},
+	}
+
+	configuration.AddOrUpdateVirtualServer(vs)
+	changes, problems := configuration.AddOrUpdateIngress(ing)
+	if diff := cmp.Diff(expectedChanges, changes); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+
+	expectedChanges = nil
+
+	changes, problems = configuration.DeleteIngress(ing.Name)
+	if diff := cmp.Diff(expectedChanges, changes); diff != "" {
+		t.Errorf("DeleteIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
+		t.Errorf("DeleteIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+
+	expectedChanges = nil
+	ing = createTestIngress("wrong-challenge", "foo.example.com", "bar.example.com")
+	ing.Labels = map[string]string{"acme.cert-manager.io/http01-solver": "true"}
+	expectedProblems = []ConfigurationProblem{
+		{
+			Object:  ing,
+			IsError: true,
+			Reason:  "Rejected",
+			Message: "spec.rules: Forbidden: challenge Ingress must have exactly 1 rule defined",
+		},
+	}
+
+	changes, problems = configuration.AddOrUpdateIngress(ing)
+	if diff := cmp.Diff(expectedChanges, changes); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+
+	ing = createTestIngress("wrong-challenge", "foo.example.com")
+	ing.Labels = map[string]string{"acme.cert-manager.io/http01-solver": "true"}
+	expectedProblems = []ConfigurationProblem{
+		{
+			Object:  ing,
+			IsError: true,
+			Reason:  "Rejected",
+			Message: "spec.rules.HTTP.Paths: Forbidden: challenge Ingress must have exactly 1 path defined",
+		},
+	}
+
+	changes, problems = configuration.AddOrUpdateIngress(ing)
+	if diff := cmp.Diff(expectedChanges, changes); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(expectedProblems, problems); diff != "" {
+		t.Errorf("AddOrUpdateIngress() returned unexpected result (-want +got):\n%s", diff)
+	}
+}
+
 func mustInitGlobalConfiguration(c *Configuration, gc *conf_v1alpha1.GlobalConfiguration) {
 	changes, problems, err := c.AddOrUpdateGlobalConfiguration(gc)
 
@@ -2715,6 +2823,50 @@ func createTestIngress(name string, hosts ...string) *networking.Ingress {
 	}
 }
 
+func createTestChallengeIngress(name string, host string, path string, serviceName string) *networking.Ingress {
+	var rules []networking.IngressRule
+	backend := networking.IngressBackend{
+		Service: &networking.IngressServiceBackend{
+			Name: serviceName,
+			Port: networking.ServiceBackendPort{
+				Number: 8089,
+			},
+		},
+	}
+
+	rules = append(rules, networking.IngressRule{
+		Host: host,
+		IngressRuleValue: networking.IngressRuleValue{
+			HTTP: &networking.HTTPIngressRuleValue{
+				Paths: []networking.HTTPIngressPath{
+					{
+						Path:    path,
+						Backend: backend,
+					},
+				},
+			},
+		},
+	},
+	)
+
+	return &networking.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         "default",
+			CreationTimestamp: metav1.Now(),
+			Annotations: map[string]string{
+				"kubernetes.io/ingress.class": "nginx",
+			},
+			Labels: map[string]string{
+				"acme.cert-manager.io/http01-solver": "true",
+			},
+		},
+		Spec: networking.IngressSpec{
+			Rules: rules,
+		},
+	}
+}
+
 func createTestVirtualServer(name string, host string) *conf_v1.VirtualServer {
 	return &conf_v1.VirtualServer{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2751,6 +2903,33 @@ func createTestVirtualServerRoute(name string, host string, path string) *conf_v
 						Return: &conf_v1.ActionReturn{
 							Body: "vsr",
 						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func createTestChallengeVirtualServerRoute(name string, host string, path string) *conf_v1.VirtualServerRoute {
+	return &conf_v1.VirtualServerRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      name,
+		},
+		Spec: conf_v1.VirtualServerRouteSpec{
+			Host: host,
+			Upstreams: []conf_v1.Upstream{
+				{
+					Name:    "challenge",
+					Service: "cm-acme-http-solver-test",
+					Port:    8089,
+				},
+			},
+			Subroutes: []conf_v1.Route{
+				{
+					Path: path,
+					Action: &conf_v1.Action{
+						Pass: "challenge",
 					},
 				},
 			},
@@ -3024,23 +3203,23 @@ type testReferenceChecker struct {
 	onlyTransportServers    bool
 }
 
-func (rc *testReferenceChecker) IsReferencedByIngress(namespace string, name string, ing *networking.Ingress) bool {
+func (rc *testReferenceChecker) IsReferencedByIngress(namespace string, name string, _ *networking.Ingress) bool {
 	return rc.onlyIngresses && namespace == rc.resourceNamespace && name == rc.resourceName
 }
 
-func (rc *testReferenceChecker) IsReferencedByMinion(namespace string, name string, ing *networking.Ingress) bool {
+func (rc *testReferenceChecker) IsReferencedByMinion(namespace string, name string, _ *networking.Ingress) bool {
 	return rc.onlyMinions && namespace == rc.resourceNamespace && name == rc.resourceName
 }
 
-func (rc *testReferenceChecker) IsReferencedByVirtualServer(namespace string, name string, vs *conf_v1.VirtualServer) bool {
+func (rc *testReferenceChecker) IsReferencedByVirtualServer(namespace string, name string, _ *conf_v1.VirtualServer) bool {
 	return rc.onlyVirtualServers && namespace == rc.resourceNamespace && name == rc.resourceName
 }
 
-func (rc *testReferenceChecker) IsReferencedByVirtualServerRoute(namespace string, name string, vsr *conf_v1.VirtualServerRoute) bool {
+func (rc *testReferenceChecker) IsReferencedByVirtualServerRoute(namespace string, name string, _ *conf_v1.VirtualServerRoute) bool {
 	return rc.onlyVirtualServerRoutes && namespace == rc.resourceNamespace && name == rc.resourceName
 }
 
-func (rc *testReferenceChecker) IsReferencedByTransportServer(namespace string, name string, ts *conf_v1alpha1.TransportServer) bool {
+func (rc *testReferenceChecker) IsReferencedByTransportServer(namespace string, name string, _ *conf_v1alpha1.TransportServer) bool {
 	return rc.onlyTransportServers && namespace == rc.resourceNamespace && name == rc.resourceName
 }
 
@@ -3170,13 +3349,33 @@ func TestFindResourcesForResourceReference(t *testing.T) {
 func TestGetResources(t *testing.T) {
 	ing := createTestIngress("ingress", "foo.example.com", "bar.example.com")
 	vs := createTestVirtualServer("virtualserver", "qwe.example.com")
+	passTS := createTestTLSPassthroughTransportServer("transportserver", "abc.example.com")
+	ts := createTestTransportServer("transportserver-tcp", "tcp-7777", "TCP")
+
+	listeners := []conf_v1alpha1.Listener{
+		{
+			Name:     "tcp-7777",
+			Port:     7777,
+			Protocol: "TCP",
+		},
+	}
+	gc := createTestGlobalConfiguration(listeners)
 
 	configuration := createTestConfiguration()
+
+	_, _, err := configuration.AddOrUpdateGlobalConfiguration(gc)
+	if err != nil {
+		t.Fatalf("AddOrUpdateGlobalConfiguration() returned unexpected error %v", err)
+	}
 	configuration.AddOrUpdateIngress(ing)
 	configuration.AddOrUpdateVirtualServer(vs)
+	configuration.AddOrUpdateTransportServer(passTS)
+	configuration.AddOrUpdateTransportServer(ts)
 
 	expected := []Resource{
 		configuration.hosts["foo.example.com"],
+		configuration.hosts["abc.example.com"],
+		configuration.listeners["tcp-7777"],
 		configuration.hosts["qwe.example.com"],
 	}
 
@@ -3202,9 +3401,117 @@ func TestGetResources(t *testing.T) {
 	if diff := cmp.Diff(expected, result); diff != "" {
 		t.Errorf("GetResources() returned unexpected result (-want +got):\n%s", diff)
 	}
+
+	expected = []Resource{
+		configuration.hosts["abc.example.com"],
+		configuration.listeners["tcp-7777"],
+	}
+
+	result = configuration.GetResourcesWithFilter(resourceFilter{TransportServers: true})
+	if diff := cmp.Diff(expected, result); diff != "" {
+		t.Errorf("GetResources() returned unexpected result (-want +got):\n%s", diff)
+	}
 }
 
-func TestIsEqualForIngressConfigurationes(t *testing.T) {
+func TestGetTransportServerMetrics(t *testing.T) {
+	tsPass := createTestTLSPassthroughTransportServer("transportserver", "abc.example.com")
+	tsTCP := createTestTransportServer("transportserver-tcp", "tcp-7777", "TCP")
+	tsUDP := createTestTransportServer("transportserver-udp", "udp-7777", "UDP")
+
+	tests := []struct {
+		tses     []*conf_v1alpha1.TransportServer
+		expected *TransportServerMetrics
+		msg      string
+	}{
+		{
+			tses: nil,
+			expected: &TransportServerMetrics{
+				TotalTLSPassthrough: 0,
+				TotalTCP:            0,
+				TotalUDP:            0,
+			},
+			msg: "no TransportServers",
+		},
+		{
+			tses: []*conf_v1alpha1.TransportServer{
+				tsPass,
+			},
+			expected: &TransportServerMetrics{
+				TotalTLSPassthrough: 1,
+				TotalTCP:            0,
+				TotalUDP:            0,
+			},
+			msg: "one TLSPassthrough TransportServer",
+		},
+		{
+			tses: []*conf_v1alpha1.TransportServer{
+				tsTCP,
+			},
+			expected: &TransportServerMetrics{
+				TotalTLSPassthrough: 0,
+				TotalTCP:            1,
+				TotalUDP:            0,
+			},
+			msg: "one TCP TransportServer",
+		},
+		{
+			tses: []*conf_v1alpha1.TransportServer{
+				tsUDP,
+			},
+			expected: &TransportServerMetrics{
+				TotalTLSPassthrough: 0,
+				TotalTCP:            0,
+				TotalUDP:            1,
+			},
+			msg: "one UDP TransportServer",
+		},
+		{
+			tses: []*conf_v1alpha1.TransportServer{
+				tsPass, tsTCP, tsUDP,
+			},
+			expected: &TransportServerMetrics{
+				TotalTLSPassthrough: 1,
+				TotalTCP:            1,
+				TotalUDP:            1,
+			},
+			msg: "TLSPassthrough, TCP and UDP TransportServers",
+		},
+	}
+
+	listeners := []conf_v1alpha1.Listener{
+		{
+			Name:     "tcp-7777",
+			Port:     7777,
+			Protocol: "TCP",
+		},
+		{
+			Name:     "udp-7777",
+			Port:     7777,
+			Protocol: "UDP",
+		},
+	}
+	gc := createTestGlobalConfiguration(listeners)
+
+	for _, test := range tests {
+		configuration := createTestConfiguration()
+
+		_, _, err := configuration.AddOrUpdateGlobalConfiguration(gc)
+		if err != nil {
+			t.Fatalf("AddOrUpdateGlobalConfiguration() returned unexpected error %v", err)
+		}
+
+		for _, ts := range test.tses {
+			configuration.AddOrUpdateTransportServer(ts)
+		}
+
+		result := configuration.GetTransportServerMetrics()
+		if diff := cmp.Diff(test.expected, result); diff != "" {
+			t.Errorf("GetTransportServerMetrics() returned unexpected result for the case of %s (-want +got):\n%s", test.msg, diff)
+		}
+	}
+}
+
+func TestIsEqualForIngressConfigurations(t *testing.T) {
 	regularIng := createTestIngress("regular-ingress", "foo.example.com")
 
 	ingConfigWithInvalidHost := NewRegularIngressConfiguration(regularIng)

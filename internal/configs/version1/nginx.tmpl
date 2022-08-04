@@ -44,6 +44,11 @@ http {
                       '"$http_user_agent" "$http_x_forwarded_for"';
     {{- end}}
 
+    map $upstream_trailer_grpc_status $grpc_status {
+        default $upstream_trailer_grpc_status;
+        '' $sent_http_grpc_status;
+    }
+
     {{if .AccessLogOff}}
     access_log off;
     {{else}}
@@ -68,6 +73,10 @@ http {
 
     variables_hash_bucket_size {{.VariablesHashBucketSize}};
     variables_hash_max_size {{.VariablesHashMaxSize}};
+
+    map $request_uri $request_uri_no_args {
+        "~^(?P<path>[^?]*)(\?.*)?$" $path;
+    }
 
     map $http_upgrade $connection_upgrade {
         default upgrade;
@@ -98,6 +107,7 @@ http {
         set $service "";
 
         listen 80 default_server{{if .ProxyProtocol}} proxy_protocol{{end}};
+        listen [::]:80 default_server{{if .ProxyProtocol}} proxy_protocol{{end}};
 
         {{if .TLSPassthrough}}
         listen unix:/var/lib/nginx/passthrough-https.sock ssl default_server{{if .HTTP2}} http2{{end}} proxy_protocol;
@@ -105,6 +115,7 @@ http {
         real_ip_header proxy_protocol;
         {{else}}
         listen 443 ssl default_server{{if .HTTP2}} http2{{end}}{{if .ProxyProtocol}} proxy_protocol{{end}};
+        listen [::]:443 ssl default_server{{if .HTTP2}} http2{{end}}{{if .ProxyProtocol}} proxy_protocol{{end}};
         {{end}}
 
         {{if .SSLRejectHandshake}}
@@ -145,8 +156,11 @@ http {
     # stub_status
     server {
         listen {{.NginxStatusPort}};
+        listen [::]:{{.NginxStatusPort}};
+
         {{range $value := .NginxStatusAllowCIDRs}}
         allow {{$value}};{{end}}
+
         deny all;
         {{if .OpenTracingEnabled}}
         opentracing off;
@@ -223,6 +237,7 @@ stream {
 
     server {
         listen 443;
+        listen [::]:443;
 
         ssl_preread on;
 

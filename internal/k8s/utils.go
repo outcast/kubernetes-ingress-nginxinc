@@ -23,7 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	v1 "k8s.io/api/core/v1"
-	networking "k8s.io/api/networking/v1beta1"
+	networking "k8s.io/api/networking/v1"
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -57,36 +57,6 @@ func (s *storeToIngressLister) List() (ing networking.IngressList, err error) {
 	return ing, nil
 }
 
-// GetServiceIngress gets all the Ingress' that have rules pointing to a service.
-// Note that this ignores services without the right nodePorts.
-func (s *storeToIngressLister) GetServiceIngress(svc *v1.Service) (ings []networking.Ingress, err error) {
-	for _, m := range s.Store.List() {
-		ing := *m.(*networking.Ingress).DeepCopy()
-		if ing.Namespace != svc.Namespace {
-			continue
-		}
-		if ing.Spec.Backend != nil {
-			if ing.Spec.Backend.ServiceName == svc.Name {
-				ings = append(ings, ing)
-			}
-		}
-		for _, rules := range ing.Spec.Rules {
-			if rules.IngressRuleValue.HTTP == nil {
-				continue
-			}
-			for _, p := range rules.IngressRuleValue.HTTP.Paths {
-				if p.Backend.ServiceName == svc.Name {
-					ings = append(ings, ing)
-				}
-			}
-		}
-	}
-	if len(ings) == 0 {
-		err = fmt.Errorf("No ingress for service %v", svc.Name)
-	}
-	return
-}
-
 // storeToConfigMapLister makes a Store that lists ConfigMaps
 type storeToConfigMapLister struct {
 	cache.Store
@@ -113,7 +83,7 @@ func (ipl indexerToPodLister) ListByNamespace(ns string, selector labels.Selecto
 	return pods, err
 }
 
-// storeToEndpointLister makes a Store that lists Endponts
+// storeToEndpointLister makes a Store that lists Endpoints
 type storeToEndpointLister struct {
 	cache.Store
 }
@@ -160,6 +130,10 @@ func isMinion(ing *networking.Ingress) bool {
 // isMaster determines is an ingress is a master or not
 func isMaster(ing *networking.Ingress) bool {
 	return ing.Annotations["nginx.org/mergeable-ingress-type"] == "master"
+}
+
+func isChallengeIngress(ing *networking.Ingress) bool {
+	return ing.Labels["acme.cert-manager.io/http01-solver"] == "true"
 }
 
 // hasChanges determines if current ingress has changes compared to old ingress

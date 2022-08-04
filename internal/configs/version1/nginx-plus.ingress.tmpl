@@ -1,10 +1,10 @@
 # configuration for {{.Ingress.Namespace}}/{{.Ingress.Name}}
 {{range $upstream := .Upstreams}}
 upstream {{$upstream.Name}} {
-	zone {{$upstream.Name}} {{if ne $upstream.UpstreamZoneSize "0"}}{{$upstream.UpstreamZoneSize}}{{else}}256k{{end}};
+	zone {{$upstream.Name}} {{if ne $upstream.UpstreamZoneSize "0"}}{{$upstream.UpstreamZoneSize}}{{else}}512k{{end}};
 	{{if $upstream.LBMethod }}{{$upstream.LBMethod}};{{end}}
 	{{range $server := $upstream.UpstreamServers}}
-	server {{$server.Address}}:{{$server.Port}} max_fails={{$server.MaxFails}} fail_timeout={{$server.FailTimeout}} max_conns={{$server.MaxConns}}
+	server {{$server.Address}} max_fails={{$server.MaxFails}} fail_timeout={{$server.FailTimeout}} max_conns={{$server.MaxConns}}
 	    {{- if $server.SlowStart}} slow_start={{$server.SlowStart}}{{end}}{{if $server.Resolve}} resolve{{end}};{{end}}
 	{{if $upstream.StickyCookie}}
 	sticky cookie {{$upstream.StickyCookie}};
@@ -22,12 +22,14 @@ upstream {{$upstream.Name}} {
 server {
 	{{if $server.SpiffeCerts}}
 	listen 443 ssl;
+	listen [::]:443 ssl;
 	ssl_certificate /etc/nginx/secrets/spiffe_cert.pem;
 	ssl_certificate_key /etc/nginx/secrets/spiffe_key.pem;
 	{{else}}
 	{{if not $server.GRPCOnly}}
 	{{range $port := $server.Ports}}
 	listen {{$port}}{{if $server.ProxyProtocol}} proxy_protocol{{end}};
+	listen [::]:{{$port}}{{if $server.ProxyProtocol}} proxy_protocol{{end}};
 	{{- end}}
 	{{end}}
 
@@ -39,6 +41,7 @@ server {
 	{{else}}
 	{{- range $port := $server.SSLPorts}}
 	listen {{$port}} ssl{{if $server.HTTP2}} http2{{end}}{{if $server.ProxyProtocol}} proxy_protocol{{end}};
+	listen [::]:{{$port}} ssl{{if $server.HTTP2}} http2{{end}}{{if $server.ProxyProtocol}} proxy_protocol{{end}};
 	{{- end}}
 	{{end}}
 	{{if $server.SSLRejectHandshake}}
@@ -73,7 +76,29 @@ server {
 	{{range $AppProtectLogConf := $server.AppProtectLogConfs}}app_protect_security_log {{$AppProtectLogConf}};
 	{{end}}
 	{{- end}}
-	
+
+	{{- if $server.AppProtectDosEnable}}
+	app_protect_dos_enable {{$server.AppProtectDosEnable}};
+	{{if $server.AppProtectDosPolicyFile}}app_protect_dos_policy_file {{$server.AppProtectDosPolicyFile}};{{end}}
+	{{- if $server.AppProtectDosLogEnable}}
+	app_protect_dos_security_log_enable on;
+	{{if $server.AppProtectDosLogConfFile}}app_protect_dos_security_log {{$server.AppProtectDosLogConfFile}};{{end}}
+	{{- end}}
+	{{- if $server.AppProtectDosAccessLogDst}}
+	set $loggable '0';
+	# app-protect-dos module will set it to '1'  if a request doesn't pass the rate limit
+	access_log {{ .AppProtectDosAccessLogDst }} log_dos if=$loggable;
+	{{- end}}
+	{{- if $server.AppProtectDosMonitorURI}}
+		{{- if or $server.AppProtectDosMonitorProtocol $server.AppProtectDosMonitorTimeout}}
+	app_protect_dos_monitor uri={{$server.AppProtectDosMonitorURI}}{{if $server.AppProtectDosMonitorProtocol}} protocol={{$server.AppProtectDosMonitorProtocol}}{{end}}{{if $server.AppProtectDosMonitorTimeout}} timeout={{$server.AppProtectDosMonitorTimeout}}{{end}};
+		{{- else}}
+	app_protect_dos_monitor "{{$server.AppProtectDosMonitorURI}}";
+		{{- end}}
+	{{- end}}
+	{{if $server.AppProtectDosName}}app_protect_dos_name "{{$server.AppProtectDosName}}";{{end}}
+	{{- end}}
+
 	{{if not $server.GRPCOnly}}
 	{{range $proxyHideHeader := $server.ProxyHideHeaders}}
 	proxy_hide_header {{$proxyHideHeader}};{{end}}
@@ -110,6 +135,11 @@ server {
 		return 301 https://$host$request_uri;
 	}
 	{{- end}}
+
+	{{- with $server.BasicAuth }}
+    auth_basic {{ printf "%q" .Realm }};
+    auth_basic_user_file {{ .Secret }};
+	{{- end }}
 
 	{{with $jwt := $server.JWTAuth}}
 	auth_jwt_key_file {{$jwt.Key}};
@@ -181,6 +211,11 @@ server {
 		auth_jwt "{{.Realm}}"{{if $jwt.Token}} token={{$jwt.Token}}{{end}};
 		{{end}}
 
+		{{- with $location.BasicAuth }}
+		auth_basic {{ printf "%q" .Realm }};
+		auth_basic_user_file {{ .Secret }};
+		{{- end }}
+
 		grpc_connect_timeout {{$location.ProxyConnectTimeout}};
 		grpc_read_timeout {{$location.ProxyReadTimeout}};
 		grpc_send_timeout {{$location.ProxySendTimeout}};
@@ -229,6 +264,11 @@ server {
 		error_page 401 {{$jwt.RedirectLocationName}};
 		{{end}}
 		{{end}}
+
+		{{- with $location.BasicAuth }}
+		auth_basic {{ printf "%q" .Realm }};
+		auth_basic_user_file {{ .Secret }};
+		{{- end }}
 
 		proxy_connect_timeout {{$location.ProxyConnectTimeout}};
 		proxy_read_timeout {{$location.ProxyReadTimeout}};

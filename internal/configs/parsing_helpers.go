@@ -79,7 +79,7 @@ func GetMapKeyAsUint64(m map[string]string, key string, context apiObject, nonZe
 }
 
 // GetMapKeyAsStringSlice tries to find and parse a key in the map as string slice splitting it on delimiter.
-func GetMapKeyAsStringSlice(m map[string]string, key string, context apiObject, delimiter string) ([]string, bool, error) {
+func GetMapKeyAsStringSlice(m map[string]string, key string, _ apiObject, delimiter string) ([]string, bool, error) {
 	if str, exists := m[key]; exists {
 		slice := strings.Split(str, delimiter)
 		return slice, exists, nil
@@ -180,6 +180,11 @@ func ParseInt64(s string) (int64, error) {
 // ParseUint64 ensures that the string value is a valid uint64
 func ParseUint64(s string) (uint64, error) {
 	return strconv.ParseUint(s, 10, 64)
+}
+
+// ParseFloat64 ensures that the string value is a valid float64
+func ParseFloat64(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
 }
 
 // timeRegexp http://nginx.org/en/docs/syntax.html
@@ -313,12 +318,17 @@ func parseStickyService(service string) (serviceName string, stickyCookie string
 	parts := strings.SplitN(service, " ", 2)
 
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("Invalid sticky-cookie service format: %s", service)
+		return "", "", fmt.Errorf("invalid sticky-cookie service format: %s. Must be a semicolon-separated list of sticky services", service)
 	}
 
 	svcNameParts := strings.Split(parts[0], "=")
 	if len(svcNameParts) != 2 {
-		return "", "", fmt.Errorf("Invalid sticky-cookie service format: %s", svcNameParts)
+		return "", "", fmt.Errorf("invalid sticky-cookie service format: %s", svcNameParts)
+	}
+
+	stickyCookieParameters := parts[1]
+	if !stickyCookieRegex.MatchString(stickyCookieParameters) {
+		return "", "", fmt.Errorf("invalid sticky-cookie parameters: %s", stickyCookieParameters)
 	}
 
 	return svcNameParts[1], parts[1], nil
@@ -328,28 +338,39 @@ func parseRewrites(service string) (serviceName string, rewrite string, err erro
 	parts := strings.SplitN(strings.TrimSpace(service), " ", 2)
 
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("Invalid rewrite format: %s", service)
+		return "", "", fmt.Errorf("'%s' is not a valid rewrite format, e.g. 'serviceName=tea-svc rewrite=/'", service)
 	}
 
 	svcNameParts := strings.Split(parts[0], "=")
-	if len(svcNameParts) != 2 {
-		return "", "", fmt.Errorf("Invalid rewrite format: %s", svcNameParts)
+	if len(svcNameParts) != 2 || svcNameParts[0] != "serviceName" {
+		return "", "", fmt.Errorf("'%s' is not a valid serviceName format, e.g. 'serviceName=tea-svc'", parts[0])
 	}
 
 	rwPathParts := strings.Split(parts[1], "=")
-	if len(rwPathParts) != 2 {
-		return "", "", fmt.Errorf("Invalid rewrite format: %s", rwPathParts)
+	if len(rwPathParts) != 2 || rwPathParts[0] != "rewrite" {
+		return "", "", fmt.Errorf("'%s' is not a valid rewrite path format, e.g. 'rewrite=/tea'", parts[1])
+	}
+
+	if !VerifyPath(rwPathParts[1]) {
+		return "", "", fmt.Errorf("path must start with '/' and must not include any whitespace character, '{', '}' or '$': '%s'", rwPathParts[1])
 	}
 
 	return svcNameParts[1], rwPathParts[1], nil
 }
 
 var (
-	threshEx  = regexp.MustCompile(`high=([1-9]|[1-9][0-9]|100) low=([1-9]|[1-9][0-9]|100)\b`)
-	threshExR = regexp.MustCompile(`low=([1-9]|[1-9][0-9]|100) high=([1-9]|[1-9][0-9]|100)\b`)
+	threshEx          = regexp.MustCompile(`high=([1-9]|[1-9][0-9]|100) low=([1-9]|[1-9][0-9]|100)\b`)
+	threshExR         = regexp.MustCompile(`low=([1-9]|[1-9][0-9]|100) high=([1-9]|[1-9][0-9]|100)\b`)
+	pathRegexp        = regexp.MustCompile("^" + `/[^\s{};$]*` + "$")
+	stickyCookieRegex = regexp.MustCompile("^" + `([^"$\\]|\\[^$])*` + "$")
 )
 
 // VerifyAppProtectThresholds ensures that threshold values are set correctly
 func VerifyAppProtectThresholds(value string) bool {
 	return threshEx.MatchString(value) || threshExR.MatchString(value)
+}
+
+// VerifyPath ensures that rewrite paths are in the correct format
+func VerifyPath(s string) bool {
+	return pathRegexp.MatchString(s)
 }

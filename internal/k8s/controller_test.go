@@ -20,12 +20,11 @@ import (
 	conf_v1alpha1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1alpha1"
 	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	networking "k8s.io/api/networking/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
-
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -34,75 +33,15 @@ func TestHasCorrectIngressClass(t *testing.T) {
 	incorrectIngressClass := "gce"
 	emptyClass := ""
 
-	testsWithoutIngressClassOnly := []struct {
+	tests := []struct {
 		lbc      *LoadBalancerController
 		ing      *networking.Ingress
 		expected bool
 	}{
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: false,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
-			},
-			&networking.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{ingressClassKey: emptyClass},
-				},
-			},
-			true,
-		},
-		{
-			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: false,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
-			},
-			&networking.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{ingressClassKey: incorrectIngressClass},
-				},
-			},
-			false,
-		},
-		{
-			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: false,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
-			},
-			&networking.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{ingressClassKey: ingressClass},
-				},
-			},
-			true,
-		},
-		{
-			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: false,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
-			},
-			&networking.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{},
-				},
-			},
-			true,
-		},
-	}
-
-	testsWithIngressClassOnly := []struct {
-		lbc      *LoadBalancerController
-		ing      *networking.Ingress
-		expected bool
-	}{
-		{
-			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				ObjectMeta: meta_v1.ObjectMeta{
@@ -113,9 +52,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				ObjectMeta: meta_v1.ObjectMeta{
@@ -126,9 +64,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				ObjectMeta: meta_v1.ObjectMeta{
@@ -139,9 +76,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true,
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				ObjectMeta: meta_v1.ObjectMeta{
@@ -152,9 +88,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true, // always true for k8s >= 1.18
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				Spec: networking.IngressSpec{
@@ -165,9 +100,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true, // always true for k8s >= 1.18
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				Spec: networking.IngressSpec{
@@ -178,9 +112,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true, // always true for k8s >= 1.18
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				ObjectMeta: meta_v1.ObjectMeta{
@@ -194,9 +127,8 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 		{
 			&LoadBalancerController{
-				ingressClass:        ingressClass,
-				useIngressClassOnly: true, // always true for k8s >= 1.18
-				metricsCollector:    collectors.NewControllerFakeCollector(),
+				ingressClass:     ingressClass,
+				metricsCollector: collectors.NewControllerFakeCollector(),
 			},
 			&networking.Ingress{
 				Spec: networking.IngressSpec{
@@ -207,25 +139,14 @@ func TestHasCorrectIngressClass(t *testing.T) {
 		},
 	}
 
-	for _, test := range testsWithoutIngressClassOnly {
+	for _, test := range tests {
 		if result := test.lbc.HasCorrectIngressClass(test.ing); result != test.expected {
 			classAnnotation := "N/A"
 			if class, exists := test.ing.Annotations[ingressClassKey]; exists {
 				classAnnotation = class
 			}
-			t.Errorf("lbc.HasCorrectIngressClass(ing), lbc.ingressClass=%v, lbc.useIngressClassOnly=%v, ing.Annotations['%v']=%v; got %v, expected %v",
-				test.lbc.ingressClass, test.lbc.useIngressClassOnly, ingressClassKey, classAnnotation, result, test.expected)
-		}
-	}
-
-	for _, test := range testsWithIngressClassOnly {
-		if result := test.lbc.HasCorrectIngressClass(test.ing); result != test.expected {
-			classAnnotation := "N/A"
-			if class, exists := test.ing.Annotations[ingressClassKey]; exists {
-				classAnnotation = class
-			}
-			t.Errorf("lbc.HasCorrectIngressClass(ing), lbc.ingressClass=%v, lbc.useIngressClassOnly=%v, ing.Annotations['%v']=%v; got %v, expected %v",
-				test.lbc.ingressClass, test.lbc.useIngressClassOnly, ingressClassKey, classAnnotation, result, test.expected)
+			t.Errorf("lbc.HasCorrectIngressClass(ing), lbc.ingressClass=%v, ing.Annotations['%v']=%v; got %v, expected %v",
+				test.lbc.ingressClass, ingressClassKey, classAnnotation, result, test.expected)
 		}
 	}
 }
@@ -251,13 +172,7 @@ func deepCopyWithIngressClass(obj interface{}, class string) interface{} {
 
 func TestIngressClassForCustomResources(t *testing.T) {
 	ctrl := &LoadBalancerController{
-		ingressClass:        "nginx",
-		useIngressClassOnly: false,
-	}
-
-	ctrlWithUseICOnly := &LoadBalancerController{
-		ingressClass:        "nginx",
-		useIngressClassOnly: true,
+		ingressClass: "nginx",
 	}
 
 	tests := []struct {
@@ -273,34 +188,16 @@ func TestIngressClassForCustomResources(t *testing.T) {
 			msg:             "Ingress Controller handles a resource that matches its IngressClass",
 		},
 		{
-			lbc:             ctrlWithUseICOnly,
-			objIngressClass: "nginx",
-			expected:        true,
-			msg:             "Ingress Controller with useIngressClassOnly handles a resource that matches its IngressClass",
-		},
-		{
 			lbc:             ctrl,
 			objIngressClass: "",
 			expected:        true,
 			msg:             "Ingress Controller handles a resource with an empty IngressClass",
 		},
 		{
-			lbc:             ctrlWithUseICOnly,
-			objIngressClass: "",
-			expected:        true,
-			msg:             "Ingress Controller with useIngressClassOnly handles a resource with an empty IngressClass",
-		},
-		{
 			lbc:             ctrl,
 			objIngressClass: "gce",
 			expected:        false,
 			msg:             "Ingress Controller doesn't handle a resource that doesn't match its IngressClass",
-		},
-		{
-			lbc:             ctrlWithUseICOnly,
-			objIngressClass: "gce",
-			expected:        false,
-			msg:             "Ingress Controller with useIngressClassOnly doesn't handle a resource that doesn't match its IngressClass",
 		},
 	}
 
@@ -422,7 +319,7 @@ func TestFindProbeForPods(t *testing.T) {
 				Containers: []v1.Container{
 					{
 						ReadinessProbe: &v1.Probe{
-							Handler: v1.Handler{
+							ProbeHandler: v1.ProbeHandler{
 								HTTPGet: &v1.HTTPGetAction{
 									Path: "/",
 									Host: "asdf.com",
@@ -531,25 +428,33 @@ func TestGetServicePortForIngressPort(t *testing.T) {
 		},
 		Status: v1.ServiceStatus{},
 	}
-	ingSvcPort := intstr.FromString("foo")
-	svcPort := lbc.getServicePortForIngressPort(ingSvcPort, &svc)
+	backendPort := networking.ServiceBackendPort{
+		Name: "foo",
+	}
+	svcPort := lbc.getServicePortForIngressPort(backendPort, &svc)
 	if svcPort == nil || svcPort.Port != 80 {
 		t.Errorf("TargetPort string match failed: %+v", svcPort)
 	}
 
-	ingSvcPort = intstr.FromInt(80)
-	svcPort = lbc.getServicePortForIngressPort(ingSvcPort, &svc)
+	backendPort = networking.ServiceBackendPort{
+		Number: 80,
+	}
+	svcPort = lbc.getServicePortForIngressPort(backendPort, &svc)
 	if svcPort == nil || svcPort.Port != 80 {
 		t.Errorf("TargetPort int match failed: %+v", svcPort)
 	}
 
-	ingSvcPort = intstr.FromInt(22)
-	svcPort = lbc.getServicePortForIngressPort(ingSvcPort, &svc)
+	backendPort = networking.ServiceBackendPort{
+		Number: 22,
+	}
+	svcPort = lbc.getServicePortForIngressPort(backendPort, &svc)
 	if svcPort != nil {
 		t.Errorf("Mismatched ints should not return port: %+v", svcPort)
 	}
-	ingSvcPort = intstr.FromString("bar")
-	svcPort = lbc.getServicePortForIngressPort(ingSvcPort, &svc)
+	backendPort = networking.ServiceBackendPort{
+		Name: "bar",
+	}
+	svcPort = lbc.getServicePortForIngressPort(backendPort, &svc)
 	if svcPort != nil {
 		t.Errorf("Mismatched strings should not return port: %+v", svcPort)
 	}
@@ -711,6 +616,19 @@ func TestGetPolicies(t *testing.T) {
 		},
 	}
 
+	validPolicyIngressClass := &conf_v1.Policy{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "valid-policy-ingress-class",
+			Namespace: "default",
+		},
+		Spec: conf_v1.PolicySpec{
+			IngressClass: "test-class",
+			AccessControl: &conf_v1.AccessControl{
+				Allow: []string{"127.0.0.1"},
+			},
+		},
+	}
+
 	invalidPolicy := &conf_v1.Policy{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "invalid-policy",
@@ -726,6 +644,8 @@ func TestGetPolicies(t *testing.T) {
 				switch key {
 				case "default/valid-policy":
 					return validPolicy, true, nil
+				case "default/valid-policy-ingress-class":
+					return validPolicyIngressClass, true, nil
 				case "default/invalid-policy":
 					return invalidPolicy, true, nil
 				case "nginx-ingress/valid-policy":
@@ -754,13 +674,18 @@ func TestGetPolicies(t *testing.T) {
 			Name:      "some-policy", // will make lister return error
 			Namespace: "nginx-ingress",
 		},
+		{
+			Name:      "valid-policy-ingress-class",
+			Namespace: "default",
+		},
 	}
 
 	expectedPolicies := []*conf_v1.Policy{validPolicy}
 	expectedErrors := []error{
-		errors.New("Policy default/invalid-policy is invalid: spec: Invalid value: \"\": must specify exactly one of: `accessControl`, `rateLimit`, `ingressMTLS`, `egressMTLS`, `jwt`, `oidc`, `waf`"),
+		errors.New("Policy default/invalid-policy is invalid: spec: Invalid value: \"\": must specify exactly one of: `accessControl`, `rateLimit`, `ingressMTLS`, `egressMTLS`, `basicAuth`, `jwt`, `oidc`, `waf`"),
 		errors.New("Policy nginx-ingress/valid-policy doesn't exist"),
 		errors.New("Failed to get policy nginx-ingress/some-policy: GetByKey error"),
+		errors.New("referenced policy default/valid-policy-ingress-class has incorrect ingress class: test-class (controller ingress class: )"),
 	}
 
 	result, errors := lbc.getPolicies(policyRefs, "default")
@@ -1033,6 +958,30 @@ func TestFindPoliciesForSecret(t *testing.T) {
 		},
 	}
 
+	basicPol1 := &conf_v1.Policy{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "basic-auth-policy",
+			Namespace: "default",
+		},
+		Spec: conf_v1.PolicySpec{
+			BasicAuth: &conf_v1.BasicAuth{
+				Secret: "basic-auth-secret",
+			},
+		},
+	}
+
+	basicPol2 := &conf_v1.Policy{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "basic-auth-policy",
+			Namespace: "ns-1",
+		},
+		Spec: conf_v1.PolicySpec{
+			BasicAuth: &conf_v1.BasicAuth{
+				Secret: "basic-auth-secret",
+			},
+		},
+	}
+
 	ingTLSPol := &conf_v1.Policy{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "ingress-mtls-policy",
@@ -1104,6 +1053,27 @@ func TestFindPoliciesForSecret(t *testing.T) {
 			secretNamespace: "default",
 			secretName:      "jwk-secret",
 			expected:        []*conf_v1.Policy{jwtPol1},
+			msg:             "Find policy in default ns, ignore other",
+		},
+		{
+			policies:        []*conf_v1.Policy{basicPol1},
+			secretNamespace: "default",
+			secretName:      "basic-auth-secret",
+			expected:        []*conf_v1.Policy{basicPol1},
+			msg:             "Find policy in default ns",
+		},
+		{
+			policies:        []*conf_v1.Policy{basicPol2},
+			secretNamespace: "default",
+			secretName:      "basic-auth-secret",
+			expected:        nil,
+			msg:             "Ignore policies in other namespaces",
+		},
+		{
+			policies:        []*conf_v1.Policy{basicPol1, basicPol2},
+			secretNamespace: "default",
+			secretName:      "basic-auth-secret",
+			expected:        []*conf_v1.Policy{basicPol1},
 			msg:             "Find policy in default ns, ignore other",
 		},
 		{
@@ -1299,6 +1269,130 @@ func TestAddJWTSecrets(t *testing.T) {
 
 		if diff := cmp.Diff(test.expectedSecretRefs, result, cmp.Comparer(errorComparer)); diff != "" {
 			t.Errorf("addJWTSecretRefs() '%v' mismatch (-want +got):\n%s", test.msg, diff)
+		}
+	}
+}
+
+func TestAddBasicSecrets(t *testing.T) {
+	invalidErr := errors.New("invalid")
+	validBasicSecret := &v1.Secret{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "valid-basic-auth-secret",
+			Namespace: "default",
+		},
+		Type: secrets.SecretTypeJWK,
+	}
+	invalidBasicSecret := &v1.Secret{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "invalid-basic-auth-secret",
+			Namespace: "default",
+		},
+		Type: secrets.SecretTypeJWK,
+	}
+
+	tests := []struct {
+		policies           []*conf_v1.Policy
+		expectedSecretRefs map[string]*secrets.SecretReference
+		wantErr            bool
+		msg                string
+	}{
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "basic-auth-policy",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						BasicAuth: &conf_v1.BasicAuth{
+							Secret: "valid-basic-auth-secret",
+							Realm:  "My API",
+						},
+					},
+				},
+			},
+			expectedSecretRefs: map[string]*secrets.SecretReference{
+				"default/valid-basic-auth-secret": {
+					Secret: validBasicSecret,
+					Path:   "/etc/nginx/secrets/default-valid-basic-auth-secret",
+				},
+			},
+			wantErr: false,
+			msg:     "test getting valid secret",
+		},
+		{
+			policies:           []*conf_v1.Policy{},
+			expectedSecretRefs: map[string]*secrets.SecretReference{},
+			wantErr:            false,
+			msg:                "test getting valid secret with no policy",
+		},
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "basic-auth-policy",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						AccessControl: &conf_v1.AccessControl{
+							Allow: []string{"127.0.0.1"},
+						},
+					},
+				},
+			},
+			expectedSecretRefs: map[string]*secrets.SecretReference{},
+			wantErr:            false,
+			msg:                "test getting invalid secret with wrong policy",
+		},
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "basic-auth-policy",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						BasicAuth: &conf_v1.BasicAuth{
+							Secret: "invalid-basic-auth-secret",
+							Realm:  "My API",
+						},
+					},
+				},
+			},
+			expectedSecretRefs: map[string]*secrets.SecretReference{
+				"default/invalid-basic-auth-secret": {
+					Secret: invalidBasicSecret,
+					Error:  invalidErr,
+				},
+			},
+			wantErr: true,
+			msg:     "test getting invalid secret",
+		},
+	}
+
+	lbc := LoadBalancerController{
+		secretStore: secrets.NewFakeSecretsStore(map[string]*secrets.SecretReference{
+			"default/valid-basic-auth-secret": {
+				Secret: validBasicSecret,
+				Path:   "/etc/nginx/secrets/default-valid-basic-auth-secret",
+			},
+			"default/invalid-basic-auth-secret": {
+				Secret: invalidBasicSecret,
+				Error:  invalidErr,
+			},
+		}),
+	}
+
+	for _, test := range tests {
+		result := make(map[string]*secrets.SecretReference)
+
+		err := lbc.addBasicSecretRefs(result, test.policies)
+		if (err != nil) != test.wantErr {
+			t.Errorf("addBasicSecretRefs() returned %v, for the case of %v", err, test.msg)
+		}
+
+		if diff := cmp.Diff(test.expectedSecretRefs, result, cmp.Comparer(errorComparer)); diff != "" {
+			t.Errorf("addBasicSecretRefs() '%v' mismatch (-want +got):\n%s", test.msg, diff)
 		}
 	}
 }
@@ -1784,6 +1878,15 @@ func TestAddWAFPolicyRefs(t *testing.T) {
 		},
 	}
 
+	additionalLogConf := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"namespace": "default",
+				"name":      "additional-log-conf",
+			},
+		},
+	}
+
 	tests := []struct {
 		policies            []*conf_v1.Policy
 		expectedApPolRefs   map[string]*unstructured.Unstructured
@@ -1865,6 +1968,102 @@ func TestAddWAFPolicyRefs(t *testing.T) {
 			expectedLogConfRefs: make(map[string]*unstructured.Unstructured),
 			msg:                 "logConf doesn't exist",
 		},
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "waf-pol",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						WAF: &conf_v1.WAF{
+							Enable:   true,
+							ApPolicy: "ap-pol",
+							SecurityLogs: []*conf_v1.SecurityLog{
+								{
+									Enable:    true,
+									ApLogConf: "log-conf",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedApPolRefs: map[string]*unstructured.Unstructured{
+				"default/ap-pol": apPol,
+			},
+			expectedLogConfRefs: map[string]*unstructured.Unstructured{
+				"default/log-conf": logConf,
+			},
+		},
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "waf-pol",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						WAF: &conf_v1.WAF{
+							Enable:   true,
+							ApPolicy: "ap-pol",
+							SecurityLogs: []*conf_v1.SecurityLog{
+								{
+									Enable:    true,
+									ApLogConf: "log-conf",
+								},
+								{
+									Enable:    true,
+									ApLogConf: "additional-log-conf",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedApPolRefs: map[string]*unstructured.Unstructured{
+				"default/ap-pol": apPol,
+			},
+			expectedLogConfRefs: map[string]*unstructured.Unstructured{
+				"default/log-conf":            logConf,
+				"default/additional-log-conf": additionalLogConf,
+			},
+		},
+		{
+			policies: []*conf_v1.Policy{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "waf-pol",
+						Namespace: "default",
+					},
+					Spec: conf_v1.PolicySpec{
+						WAF: &conf_v1.WAF{
+							Enable:   true,
+							ApPolicy: "ap-pol",
+							SecurityLog: &conf_v1.SecurityLog{
+								Enable:    true,
+								ApLogConf: "additional-log-conf",
+							},
+							SecurityLogs: []*conf_v1.SecurityLog{
+								{
+									Enable:    true,
+									ApLogConf: "log-conf",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			expectedApPolRefs: map[string]*unstructured.Unstructured{
+				"default/ap-pol": apPol,
+			},
+			expectedLogConfRefs: map[string]*unstructured.Unstructured{
+				"default/log-conf": logConf,
+			},
+		},
 	}
 
 	lbc := LoadBalancerController{
@@ -1872,6 +2071,7 @@ func TestAddWAFPolicyRefs(t *testing.T) {
 	}
 	lbc.appProtectConfiguration.AddOrUpdatePolicy(apPol)
 	lbc.appProtectConfiguration.AddOrUpdateLogConf(logConf)
+	lbc.appProtectConfiguration.AddOrUpdateLogConf(additionalLogConf)
 
 	for _, test := range tests {
 		resApPolicy := make(map[string]*unstructured.Unstructured)
@@ -1937,13 +2137,13 @@ func TestGetWAFPoliciesForAppProtectPolicy(t *testing.T) {
 			pols: policies,
 			key:  "ns1/apPol",
 			want: []*conf_v1.Policy{apPol},
-			msg:  "WAF pols that ref apPol which has a namepace",
+			msg:  "WAF pols that ref apPol which has a namespace",
 		},
 		{
 			pols: policies,
 			key:  "default/apPol",
 			want: []*conf_v1.Policy{apPolNoNs},
-			msg:  "WAF pols that ref apPol which has no namepace",
+			msg:  "WAF pols that ref apPol which has no namespace",
 		},
 		{
 			pols: policies,
@@ -1974,6 +2174,20 @@ func TestGetWAFPoliciesForAppProtectLogConf(t *testing.T) {
 				SecurityLog: &conf_v1.SecurityLog{
 					Enable:    true,
 					ApLogConf: "ns1/logConf",
+				},
+			},
+		},
+	}
+
+	logConfs := &conf_v1.Policy{
+		Spec: conf_v1.PolicySpec{
+			WAF: &conf_v1.WAF{
+				Enable: true,
+				SecurityLogs: []*conf_v1.SecurityLog{
+					{
+						Enable:    true,
+						ApLogConf: "ns1/logConfs",
+					},
 				},
 			},
 		},
@@ -2010,7 +2224,7 @@ func TestGetWAFPoliciesForAppProtectLogConf(t *testing.T) {
 	}
 
 	policies := []*conf_v1.Policy{
-		logConf, logConfNs2, logConfNoNs,
+		logConf, logConfs, logConfNs2, logConfNoNs,
 	}
 
 	tests := []struct {
@@ -2023,13 +2237,19 @@ func TestGetWAFPoliciesForAppProtectLogConf(t *testing.T) {
 			pols: policies,
 			key:  "ns1/logConf",
 			want: []*conf_v1.Policy{logConf},
-			msg:  "WAF pols that ref logConf which has a namepace",
+			msg:  "WAF pols that ref logConf which has a namespace",
 		},
 		{
 			pols: policies,
 			key:  "default/logConf",
 			want: []*conf_v1.Policy{logConfNoNs},
-			msg:  "WAF pols that ref logConf which has no namepace",
+			msg:  "WAF pols that ref logConf which has no namespace",
+		},
+		{
+			pols: policies,
+			key:  "ns1/logConfs",
+			want: []*conf_v1.Policy{logConfs},
+			msg:  "WAF pols that ref logConf via logConfs field",
 		},
 		{
 			pols: policies,

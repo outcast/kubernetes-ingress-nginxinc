@@ -28,6 +28,7 @@ nginx-ingress
 osx-nginx-plus-ingress
 nginx-plus-ingress
 cmd/nginx-ingress/nginx-ingress
+dist/
 
 # NGINX Plus license files
 *.crt
@@ -49,11 +50,20 @@ default.pem
 hack/controller-gen-*
 
 # Ignore local docs dependencies
-docs-web/.netlify/state.json
 site/
 venv/
-
-dist/
+docs/public
+docs/themes/f5-hugo
+.netlify/
+docs/.netlify
 
 # trivy container scanning cache
 .trivycache/
+
+# coverage files
+coverage.txt
+coverage.out
+
+node_modules
+package-lock.json
+package.json

@@ -37,6 +37,7 @@ type Upstream struct {
 	Queue            *Queue
 	SessionCookie    *SessionCookie
 	UpstreamLabels   UpstreamLabels
+	NTLM             bool
 }
 
 // UpstreamServer defines an upstream server.
@@ -67,10 +68,12 @@ type Server struct {
 	LimitReqOptions           LimitReqOptions
 	LimitReqs                 []LimitReq
 	JWTAuth                   *JWTAuth
+	BasicAuth                 *BasicAuth
 	IngressMTLS               *IngressMTLS
 	EgressMTLS                *EgressMTLS
 	OIDC                      *OIDC
 	WAF                       *WAF
+	Dos                       *Dos
 	PoliciesErrorReturn       *Return
 	VSNamespace               string
 	VSName                    string
@@ -105,14 +108,16 @@ type EgressMTLS struct {
 	SSLName        string
 }
 
+// OIDC holds OIDC configuration data.
 type OIDC struct {
-	AuthEndpoint  string
-	ClientID      string
-	ClientSecret  string
-	JwksURI       string
-	Scope         string
-	TokenEndpoint string
-	RedirectURI   string
+	AuthEndpoint   string
+	ClientID       string
+	ClientSecret   string
+	JwksURI        string
+	Scope          string
+	TokenEndpoint  string
+	RedirectURI    string
+	ZoneSyncLeeway int
 }
 
 // WAF defines WAF configuration.
@@ -120,7 +125,20 @@ type WAF struct {
 	Enable              string
 	ApPolicy            string
 	ApSecurityLogEnable bool
-	ApLogConf           string
+	ApLogConf           []string
+}
+
+// Dos defines Dos configuration.
+type Dos struct {
+	Enable                 string
+	Name                   string
+	ApDosPolicy            string
+	ApDosSecurityLogEnable bool
+	ApDosLogConf           string
+	ApDosMonitorURI        string
+	ApDosMonitorProtocol   string
+	ApDosMonitorTimeout    uint64
+	ApDosAccessLogDest     string
 }
 
 // Location defines a location.
@@ -158,14 +176,17 @@ type Location struct {
 	LimitReqOptions          LimitReqOptions
 	LimitReqs                []LimitReq
 	JWTAuth                  *JWTAuth
+	BasicAuth                *BasicAuth
 	EgressMTLS               *EgressMTLS
 	OIDC                     bool
 	WAF                      *WAF
+	Dos                      *Dos
 	PoliciesErrorReturn      *Return
 	ServiceName              string
 	IsVSR                    bool
 	VSRName                  string
 	VSRNamespace             string
+	GRPCPass                 string
 }
 
 // ReturnLocation defines a location for returning a fixed response.
@@ -230,6 +251,11 @@ type HealthCheck struct {
 	ProxySendTimeout    string
 	Headers             map[string]string
 	Match               string
+	GRPCPass            string
+	GRPCStatus          *int
+	GRPCService         string
+	Mandatory           bool
+	Persistent          bool
 }
 
 // TLSRedirect defines a redirect in a Server.
@@ -326,4 +352,10 @@ type JWTAuth struct {
 	Secret string
 	Realm  string
 	Token  string
+}
+
+// BasicAuth refers to basic HTTP authentication mechanism options
+type BasicAuth struct {
+	Secret string
+	Realm  string
 }

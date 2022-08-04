@@ -62,6 +62,7 @@ func errorComparer(e1, e2 error) bool {
 }
 
 func TestAddOrUpdateSecret(t *testing.T) {
+	t.Parallel()
 	manager := &fakeSecretFileManager{}
 
 	store := NewLocalSecretStore(manager)
@@ -115,7 +116,7 @@ func TestAddOrUpdateSecret(t *testing.T) {
 	expectedSecretRef = &SecretReference{
 		Secret: invalidSecret,
 		Path:   "",
-		Error:  errors.New("Failed to validate TLS cert and key: asn1: syntax error: sequence truncated"),
+		Error:  errors.New("Failed to validate TLS cert and key: x509: malformed certificate"),
 	}
 	expectedManager = &fakeSecretFileManager{}
 
@@ -196,6 +197,7 @@ func TestAddOrUpdateSecret(t *testing.T) {
 }
 
 func TestDeleteSecretNonExisting(t *testing.T) {
+	t.Parallel()
 	manager := &fakeSecretFileManager{}
 	store := NewLocalSecretStore(manager)
 
@@ -209,6 +211,7 @@ func TestDeleteSecretNonExisting(t *testing.T) {
 }
 
 func TestDeleteSecretValidSecret(t *testing.T) {
+	t.Parallel()
 	manager := &fakeSecretFileManager{}
 	store := NewLocalSecretStore(manager)
 
@@ -275,6 +278,7 @@ func TestDeleteSecretValidSecret(t *testing.T) {
 }
 
 func TestDeleteSecretInvalidSecret(t *testing.T) {
+	t.Parallel()
 	manager := &fakeSecretFileManager{}
 	store := NewLocalSecretStore(manager)
 

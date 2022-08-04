@@ -8,19 +8,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nginxinc/kubernetes-ingress/internal/k8s/appprotect"
 	v1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 // ValidatePolicy validates a Policy.
-func ValidatePolicy(policy *v1.Policy, isPlus, enablePreviewPolicies, enableAppProtect bool) error {
-	allErrs := validatePolicySpec(&policy.Spec, field.NewPath("spec"), isPlus, enablePreviewPolicies, enableAppProtect)
+func ValidatePolicy(policy *v1.Policy, isPlus, enableOIDC, enableAppProtect bool) error {
+	allErrs := validatePolicySpec(&policy.Spec, field.NewPath("spec"), isPlus, enableOIDC, enableAppProtect)
 	return allErrs.ToAggregate()
 }
 
-func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enablePreviewPolicies, enableAppProtect bool) field.ErrorList {
+func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enableOIDC, enableAppProtect bool) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	fieldCount := 0
@@ -31,19 +30,11 @@ func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enab
 	}
 
 	if spec.RateLimit != nil {
-		if !enablePreviewPolicies {
-			return append(allErrs, field.Forbidden(fieldPath.Child("rateLimit"),
-				"rateLimit is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
-		}
 		allErrs = append(allErrs, validateRateLimit(spec.RateLimit, fieldPath.Child("rateLimit"), isPlus)...)
 		fieldCount++
 	}
 
 	if spec.JWTAuth != nil {
-		if !enablePreviewPolicies {
-			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("jwt"),
-				"jwt is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
-		}
 		if !isPlus {
 			return append(allErrs, field.Forbidden(fieldPath.Child("jwt"), "jwt secrets are only supported in NGINX Plus"))
 		}
@@ -52,28 +43,25 @@ func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enab
 		fieldCount++
 	}
 
+	if spec.BasicAuth != nil {
+		allErrs = append(allErrs, validateBasic(spec.BasicAuth, fieldPath.Child("basicAuth"))...)
+		fieldCount++
+	}
+
 	if spec.IngressMTLS != nil {
-		if !enablePreviewPolicies {
-			return append(allErrs, field.Forbidden(fieldPath.Child("ingressMTLS"),
-				"ingressMTLS is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
-		}
 		allErrs = append(allErrs, validateIngressMTLS(spec.IngressMTLS, fieldPath.Child("ingressMTLS"))...)
 		fieldCount++
 	}
 
 	if spec.EgressMTLS != nil {
-		if !enablePreviewPolicies {
-			return append(allErrs, field.Forbidden(fieldPath.Child("egressMTLS"),
-				"egressMTLS is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
-		}
 		allErrs = append(allErrs, validateEgressMTLS(spec.EgressMTLS, fieldPath.Child("egressMTLS"))...)
 		fieldCount++
 	}
 
 	if spec.OIDC != nil {
-		if !enablePreviewPolicies {
+		if !enableOIDC {
 			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("oidc"),
-				"oidc is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
+				"OIDC must be enabled via cli argument -enable-oidc to use OIDC policy"))
 		}
 		if !isPlus {
 			return append(allErrs, field.Forbidden(fieldPath.Child("oidc"), "OIDC is only supported in NGINX Plus"))
@@ -84,10 +72,6 @@ func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enab
 	}
 
 	if spec.WAF != nil {
-		if !enablePreviewPolicies {
-			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("waf"),
-				"waf is a preview policy. Preview policies must be enabled to use via cli argument -enable-preview-policies"))
-		}
 		if !isPlus {
 			allErrs = append(allErrs, field.Forbidden(fieldPath.Child("waf"), "WAF is only supported in NGINX Plus"))
 		}
@@ -101,7 +85,7 @@ func validatePolicySpec(spec *v1.PolicySpec, fieldPath *field.Path, isPlus, enab
 	}
 
 	if fieldCount != 1 {
-		msg := "must specify exactly one of: `accessControl`, `rateLimit`, `ingressMTLS`, `egressMTLS`"
+		msg := "must specify exactly one of: `accessControl`, `rateLimit`, `ingressMTLS`, `egressMTLS`, `basicAuth`"
 		if isPlus {
 			msg = fmt.Sprint(msg, ", `jwt`, `oidc`, `waf`")
 		}
@@ -169,7 +153,11 @@ func validateRateLimit(rateLimit *v1.RateLimit, fieldPath *field.Path, isPlus bo
 func validateJWT(jwt *v1.JWTAuth, fieldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	allErrs = append(allErrs, validateJWTRealm(jwt.Realm, fieldPath.Child("realm"))...)
+	if jwt.Realm == "" {
+		allErrs = append(allErrs, field.Required(fieldPath, ""))
+	} else {
+		allErrs = append(allErrs, validateRealm(jwt.Realm, fieldPath.Child("realm"))...)
+	}
 
 	if jwt.Secret == "" {
 		return append(allErrs, field.Required(fieldPath.Child("secret"), ""))
@@ -177,6 +165,21 @@ func validateJWT(jwt *v1.JWTAuth, fieldPath *field.Path) field.ErrorList {
 	allErrs = append(allErrs, validateSecretName(jwt.Secret, fieldPath.Child("secret"))...)
 
 	allErrs = append(allErrs, validateJWTToken(jwt.Token, fieldPath.Child("token"))...)
+
+	return allErrs
+}
+
+func validateBasic(basic *v1.BasicAuth, fieldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	if basic.Realm != "" {
+		allErrs = append(allErrs, validateRealm(basic.Realm, fieldPath.Child("realm"))...)
+	}
+
+	if basic.Secret == "" {
+		return append(allErrs, field.Required(fieldPath.Child("secret"), ""))
+	}
+	allErrs = append(allErrs, validateSecretName(basic.Secret, fieldPath.Child("secret"))...)
 
 	return allErrs
 }
@@ -243,6 +246,10 @@ func validateOIDC(oidc *v1.OIDC, fieldPath *field.Path) field.ErrorList {
 		allErrs = append(allErrs, validatePath(oidc.RedirectURI, fieldPath.Child("redirectURI"))...)
 	}
 
+	if oidc.ZoneSyncLeeway != nil {
+		allErrs = append(allErrs, validatePositiveIntOrZero(*oidc.ZoneSyncLeeway, fieldPath.Child("zoneSyncLeeway"))...)
+	}
+
 	allErrs = append(allErrs, validateURL(oidc.AuthEndpoint, fieldPath.Child("authEndpoint"))...)
 	allErrs = append(allErrs, validateURL(oidc.TokenEndpoint, fieldPath.Child("tokenEndpoint"))...)
 	allErrs = append(allErrs, validateURL(oidc.JWKSURI, fieldPath.Child("jwksURI"))...)
@@ -277,7 +284,7 @@ func validateLogConf(logConf, logDest string, fieldPath *field.Path) field.Error
 		}
 	}
 
-	err := appprotect.ValidateAppProtectLogDestination(logDest)
+	err := ValidateAppProtectLogDestination(logDest)
 	if err != nil {
 		allErrs = append(allErrs, field.Invalid(fieldPath.Child("logDest"), logDest, err.Error()))
 	}
@@ -391,7 +398,7 @@ var validateVerifyClientKeyParameters = map[string]bool{
 func validateIngressMTLSVerifyClient(verifyClient string, fieldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if verifyClient != "" {
-		allErrs = append(allErrs, validateParameter(verifyClient, validateVerifyClientKeyParameters, fieldPath)...)
+		allErrs = append(allErrs, ValidateParameter(verifyClient, validateVerifyClientKeyParameters, fieldPath)...)
 	}
 	return allErrs
 }
@@ -456,9 +463,8 @@ func validateRateLimitKey(key string, fieldPath *field.Path, isPlus bool) field.
 		return append(allErrs, field.Required(fieldPath, ""))
 	}
 
-	if !escapedStringsFmtRegexp.MatchString(key) {
-		msg := validation.RegexError(escapedStringsErrMsg, escapedStringsFmt, `Hello World! \n`, `\"${request_uri}\" is unavailable. \n`)
-		allErrs = append(allErrs, field.Invalid(fieldPath, key, msg))
+	if err := ValidateEscapedString(key, `Hello World! \n`, `\"${request_uri}\" is unavailable. \n`); err != nil {
+		allErrs = append(allErrs, field.Invalid(fieldPath, key, err.Error()))
 	}
 
 	allErrs = append(allErrs, validateStringWithVariables(key, fieldPath, rateLimitKeySpecialVariables, rateLimitKeyVariables, isPlus)...)
@@ -519,21 +525,17 @@ func validateRateLimitLogLevel(logLevel string, fieldPath *field.Path) field.Err
 }
 
 const (
-	jwtRealmFmt              = `([^"$\\]|\\[^$])*`
-	jwtRealmFmtErrMsg string = `a valid realm must have all '"' escaped and must not contain any '$' or end with an unescaped '\'`
+	realmFmt              = `([^"$\\]|\\[^$])*`
+	realmFmtErrMsg string = `a valid realm must have all '"' escaped and must not contain any '$' or end with an unescaped '\'`
 )
 
-var jwtRealmFmtRegexp = regexp.MustCompile("^" + jwtRealmFmt + "$")
+var realmFmtRegexp = regexp.MustCompile("^" + realmFmt + "$")
 
-func validateJWTRealm(realm string, fieldPath *field.Path) field.ErrorList {
+func validateRealm(realm string, fieldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if realm == "" {
-		return append(allErrs, field.Required(fieldPath, ""))
-	}
-
-	if !jwtRealmFmtRegexp.MatchString(realm) {
-		msg := validation.RegexError(jwtRealmFmtErrMsg, jwtRealmFmt, "MyAPI", "My Product API")
+	if !realmFmtRegexp.MatchString(realm) {
+		msg := validation.RegexError(realmFmtErrMsg, realmFmt, "MyAPI", "My Product API")
 		allErrs = append(allErrs, field.Invalid(fieldPath, realm, msg))
 	}
 

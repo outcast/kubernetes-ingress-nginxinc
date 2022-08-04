@@ -7,7 +7,7 @@ from kubernetes.client.rest import ApiException
 from settings import TEST_DATA
 from suite.custom_assertions import wait_and_assert_status_code, assert_event_and_get_count, \
     assert_event_count_increased, assert_event_starts_with_text_and_contains_errors
-from suite.custom_resources_utils import patch_virtual_server_from_yaml, get_vs_nginx_template_conf
+from suite.vs_vsr_resources_utils import patch_virtual_server_from_yaml, get_vs_nginx_template_conf
 from suite.resources_utils import get_first_pod_name, get_events, wait_before_test
 
 
@@ -113,9 +113,9 @@ class TestVSCannedResponse:
                                            virtual_server_setup.namespace)
         except ApiException as ex:
             assert ex.status == 422 \
-                   and "spec.routes.action.return.type" in ex.body \
-                   and "spec.routes.action.return.body" in ex.body \
-                   and "spec.routes.action.return.code" in ex.body
+                   and "action.return.type in body must be of type" in ex.body \
+                   and "action.return.body in body must be of type" in ex.body \
+                   and "action.return.code in body must be of type" in ex.body
         except Exception as ex:
             pytest.fail(f"An unexpected exception is raised: {ex}")
         else:

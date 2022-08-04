@@ -11,7 +11,7 @@ import (
 	conf_v1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1"
 	conf_v1alpha1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1alpha1"
 	"github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/validation"
-	networking "k8s.io/api/networking/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -312,6 +312,13 @@ func compareObjectMetasWithAnnotations(meta1 *metav1.ObjectMeta, meta2 *metav1.O
 	return compareObjectMetas(meta1, meta2) && reflect.DeepEqual(meta1.Annotations, meta2.Annotations)
 }
 
+// TransportServerMetrics holds metrics about TransportServer resources
+type TransportServerMetrics struct {
+	TotalTLSPassthrough int
+	TotalTCP            int
+	TotalUDP            int
+}
+
 // Configuration represents the configuration of the Ingress Controller - a collection of configuration objects
 // (Ingresses, VirtualServers, VirtualServerRoutes) ready to be transformed into NGINX config.
 // It holds the latest valid state of those objects.
@@ -343,11 +350,15 @@ type Configuration struct {
 	policyReferenceChecker     *policyReferenceChecker
 	appPolicyReferenceChecker  *appProtectResourceReferenceChecker
 	appLogConfReferenceChecker *appProtectResourceReferenceChecker
+	appDosProtectedChecker     *dosResourceReferenceChecker
 
 	isPlus                  bool
 	appProtectEnabled       bool
+	appProtectDosEnabled    bool
 	internalRoutesEnabled   bool
 	isTLSPassthroughEnabled bool
+	snippetsEnabled         bool
+	isCertManagerEnabled    bool
 
 	lock sync.RWMutex
 }
@@ -357,11 +368,14 @@ func NewConfiguration(
 	hasCorrectIngressClass func(interface{}) bool,
 	isPlus bool,
 	appProtectEnabled bool,
+	appProtectDosEnabled bool,
 	internalRoutesEnabled bool,
 	virtualServerValidator *validation.VirtualServerValidator,
 	globalConfigurationValidator *validation.GlobalConfigurationValidator,
 	transportServerValidator *validation.TransportServerValidator,
 	isTLSPassthroughEnabled bool,
+	snippetsEnabled bool,
+	isCertManagerEnabled bool,
 ) *Configuration {
 	return &Configuration{
 		hosts:                        make(map[string]Resource),
@@ -381,10 +395,14 @@ func NewConfiguration(
 		policyReferenceChecker:       newPolicyReferenceChecker(),
 		appPolicyReferenceChecker:    newAppProtectResourceReferenceChecker(configs.AppProtectPolicyAnnotation),
 		appLogConfReferenceChecker:   newAppProtectResourceReferenceChecker(configs.AppProtectLogConfAnnotation),
+		appDosProtectedChecker:       newDosResourceReferenceChecker(configs.AppProtectDosProtectedAnnotation),
 		isPlus:                       isPlus,
 		appProtectEnabled:            appProtectEnabled,
+		appProtectDosEnabled:         appProtectDosEnabled,
 		internalRoutesEnabled:        internalRoutesEnabled,
 		isTLSPassthroughEnabled:      isTLSPassthroughEnabled,
+		snippetsEnabled:              snippetsEnabled,
+		isCertManagerEnabled:         isCertManagerEnabled,
 	}
 }
 
@@ -399,7 +417,7 @@ func (c *Configuration) AddOrUpdateIngress(ing *networking.Ingress) ([]ResourceC
 	if !c.hasCorrectIngressClass(ing) {
 		delete(c.ingresses, key)
 	} else {
-		validationError = validateIngress(ing, c.isPlus, c.appProtectEnabled, c.internalRoutesEnabled).ToAggregate()
+		validationError = validateIngress(ing, c.isPlus, c.appProtectEnabled, c.appProtectDosEnabled, c.internalRoutesEnabled, c.snippetsEnabled).ToAggregate()
 		if validationError != nil {
 			delete(c.ingresses, key)
 		} else {
@@ -597,6 +615,14 @@ func (c *Configuration) DeleteGlobalConfiguration() ([]ResourceChange, []Configu
 	return changes, problems
 }
 
+// GetGlobalConfiguration returns the current GlobalConfiguration.
+func (c *Configuration) GetGlobalConfiguration() *conf_v1alpha1.GlobalConfiguration {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return c.globalConfiguration
+}
+
 // AddOrUpdateTransportServer adds or updates the TransportServer.
 func (c *Configuration) AddOrUpdateTransportServer(ts *conf_v1alpha1.TransportServer) ([]ResourceChange, []ConfigurationProblem) {
 	c.lock.Lock()
@@ -765,14 +791,16 @@ func (c *Configuration) buildListenersAndTSConfigurations() (newListeners map[st
 // GetResources returns all configuration resources.
 func (c *Configuration) GetResources() []Resource {
 	return c.GetResourcesWithFilter(resourceFilter{
-		Ingresses:      true,
-		VirtualServers: true,
+		Ingresses:        true,
+		VirtualServers:   true,
+		TransportServers: true,
 	})
 }
 
 type resourceFilter struct {
-	Ingresses      bool
-	VirtualServers bool
+	Ingresses        bool
+	VirtualServers   bool
+	TransportServers bool
 }
 
 // GetResourcesWithFilter returns resources using the filter.
@@ -792,6 +820,16 @@ func (c *Configuration) GetResourcesWithFilter(filter resourceFilter) []Resource
 			if filter.VirtualServers {
 				resources[r.GetKeyWithKind()] = r
 			}
+		case *TransportServerConfiguration:
+			if filter.TransportServers {
+				resources[r.GetKeyWithKind()] = r
+			}
+		}
+	}
+
+	if filter.TransportServers {
+		for _, r := range c.listeners {
+			resources[r.GetKeyWithKind()] = r
 		}
 	}
 
@@ -832,6 +870,11 @@ func (c *Configuration) FindResourcesForAppProtectPolicyAnnotation(policyNamespa
 // FindResourcesForAppProtectLogConfAnnotation finds resources that reference the specified AppProtect LogConf.
 func (c *Configuration) FindResourcesForAppProtectLogConfAnnotation(logConfNamespace string, logConfName string) []Resource {
 	return c.findResourcesForResourceReference(logConfNamespace, logConfName, c.appLogConfReferenceChecker)
+}
+
+// FindResourcesForAppProtectDosProtected finds resources that reference the specified AppProtectDos DosLogConf.
+func (c *Configuration) FindResourcesForAppProtectDosProtected(namespace string, name string) []Resource {
+	return c.findResourcesForResourceReference(namespace, name, c.appDosProtectedChecker)
 }
 
 func (c *Configuration) findResourcesForResourceReference(namespace string, name string, checker resourceReferenceChecker) []Resource {
@@ -1150,7 +1193,8 @@ func createResourceChangesForHosts(removedHosts []string, updatedHosts []string,
 }
 
 func createResourceChangesForListeners(removedListeners []string, updatedListeners []string, addedListeners []string, oldListeners map[string]*TransportServerConfiguration,
-	newListeners map[string]*TransportServerConfiguration) []ResourceChange {
+	newListeners map[string]*TransportServerConfiguration,
+) []ResourceChange {
 	var changes []ResourceChange
 	var deleteChanges []ResourceChange
 
@@ -1238,6 +1282,7 @@ func squashResourceChanges(changes []ResourceChange) []ResourceChange {
 func (c *Configuration) buildHostsAndResources() (newHosts map[string]Resource, newResources map[string]Resource) {
 	newHosts = make(map[string]Resource)
 	newResources = make(map[string]Resource)
+	var challengesVSR []*conf_v1.VirtualServerRoute
 
 	// Step 1 - Build hosts from Ingress resources
 
@@ -1249,6 +1294,14 @@ func (c *Configuration) buildHostsAndResources() (newHosts map[string]Resource, 
 		}
 
 		var resource *IngressConfiguration
+
+		if val := c.isChallengeIngress(ing); val {
+			// if using cert-manager with Ingress, the challenge Ingress must be Minion
+			// and this code won't be reached. With VS, the challenge Ingress must not be Minion.
+			vsr := c.convertIngressToVSR(ing)
+			challengesVSR = append(challengesVSR, vsr)
+			continue
+		}
 
 		if isMaster(ing) {
 			minions, childWarnings := c.buildMinionConfigs(ing.Spec.Rules[0].Host)
@@ -1283,6 +1336,11 @@ func (c *Configuration) buildHostsAndResources() (newHosts map[string]Resource, 
 		vs := c.virtualServers[key]
 
 		vsrs, warnings := c.buildVirtualServerRoutes(vs)
+		for _, vsr := range challengesVSR {
+			if vs.Spec.Host == vsr.Spec.Host {
+				vsrs = append(vsrs, vsr)
+			}
+		}
 		resource := NewVirtualServerConfiguration(vs, vsrs, warnings)
 
 		newResources[resource.GetKeyWithKind()] = resource
@@ -1334,6 +1392,44 @@ func (c *Configuration) buildHostsAndResources() (newHosts map[string]Resource, 
 	}
 
 	return newHosts, newResources
+}
+
+func (c *Configuration) isChallengeIngress(ing *networking.Ingress) bool {
+	if !c.isCertManagerEnabled {
+		return false
+	}
+	return ing.Labels["acme.cert-manager.io/http01-solver"] == "true"
+}
+
+func (c *Configuration) convertIngressToVSR(ing *networking.Ingress) *conf_v1.VirtualServerRoute {
+	rule := ing.Spec.Rules[0]
+
+	vs := &conf_v1.VirtualServerRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: ing.Namespace,
+			Name:      ing.Name,
+		},
+		Spec: conf_v1.VirtualServerRouteSpec{
+			Host: rule.Host,
+			Upstreams: []conf_v1.Upstream{
+				{
+					Name:    "challenge",
+					Service: rule.HTTP.Paths[0].Backend.Service.Name,
+					Port:    uint16(rule.HTTP.Paths[0].Backend.Service.Port.Number),
+				},
+			},
+			Subroutes: []conf_v1.Route{
+				{
+					Path: rule.HTTP.Paths[0].Path,
+					Action: &conf_v1.Action{
+						Pass: "challenge",
+					},
+				},
+			},
+		},
+	}
+
+	return vs
 }
 
 func (c *Configuration) buildMinionConfigs(masterHost string) ([]*MinionConfiguration, map[string][]string) {
@@ -1417,6 +1513,30 @@ func (c *Configuration) buildVirtualServerRoutes(vs *conf_v1.VirtualServer) ([]*
 	}
 
 	return vsrs, warnings
+}
+
+// GetTransportServerMetrics returns metrics about TransportServers
+func (c *Configuration) GetTransportServerMetrics() *TransportServerMetrics {
+	var metrics TransportServerMetrics
+
+	if c.isTLSPassthroughEnabled {
+		for _, resource := range c.hosts {
+			_, ok := resource.(*TransportServerConfiguration)
+			if ok {
+				metrics.TotalTLSPassthrough++
+			}
+		}
+	}
+
+	for _, tsConfig := range c.listeners {
+		if tsConfig.TransportServer.Spec.Listener.Protocol == "TCP" {
+			metrics.TotalTCP++
+		} else {
+			metrics.TotalUDP++
+		}
+	}
+
+	return &metrics
 }
 
 func getSortedIngressKeys(m map[string]*networking.Ingress) []string {
@@ -1533,7 +1653,8 @@ func detectChangesInHosts(oldHosts map[string]Resource, newHosts map[string]Reso
 }
 
 func detectChangesInListeners(oldListeners map[string]*TransportServerConfiguration, newListeners map[string]*TransportServerConfiguration) (removedListeners []string,
-	updatedListeners []string, addedListeners []string) {
+	updatedListeners []string, addedListeners []string,
+) {
 	for _, l := range getSortedTransportServerConfigurationKeys(oldListeners) {
 		_, exists := newListeners[l]
 		if !exists {

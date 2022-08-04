@@ -1,11 +1,11 @@
 # Support for Active Health Checks
 
-NGINX Plus supports [active health checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/#active-health-checks). To use active health checks in the Ingress controller:
+NGINX Plus supports [active health checks](https://docs.nginx.com/nginx/admin-guide/load-balancer/http-health-check/#active-health-checks). To use active health checks in the Ingress Controller:
 
 1. Define health checks ([HTTP Readiness Probe](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/#define-readiness-probes)) in the templates of your application pods.
-2. Enable heath checks in the Ingress controller using the annotations.
+2. Enable heath checks in the Ingress Controller using the annotations.
 
-The Ingress controller provides the following annotations for configuring active health checks:
+The Ingress Controller provides the following annotations for configuring active health checks:
 
 * Required: `nginx.com/health-checks: "true"` -- enables active health checks. The default is `false`.
 * Optional: `nginx.com/health-checks-mandatory: "true"` -- configures active health checks as mandatory. With the default active health checks, when an endpoint is added to NGINX Plus via the API or after a configuration reload, NGINX Plus considers the endpoint to be healthy. With mandatory health checks, when an endpoint is added to NGINX Plus or after a configuration reload, NGINX Plus considers the endpoint to be unhealthy until its health check passes. The default is `false`.
@@ -15,7 +15,7 @@ The Ingress controller provides the following annotations for configuring active
 
 In the following example we enable active health checks in the cafe-ingress Ingress:
 ```yaml
-apiVersion: networking.k8s.io/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: cafe-ingress
@@ -28,22 +28,31 @@ spec:
     http:
       paths:
       - path: /tea
+        pathType: Prefix
         backend:
-          serviceName: tea-svc
-          servicePort: 80
+          service:
+            name: tea-svc
+            port:
+              number: 80
       - path: /coffee
+        pathType: Prefix
         backend:
-          serviceName: coffee-svc
-          servicePort: 80
+          service:
+            name: coffee-svc
+            port:
+              number: 80
       - path: /beer
+        pathType: Prefix
         backend:
-          serviceName: beer-svc
-          servicePort: 80
+          service:
+            name: beer-svc
+            port:
+              number: 80
 ```
 
 Note that a Readiness Probe must be configured in the pod template:
 ```yaml
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tea
@@ -52,7 +61,7 @@ spec:
   selector:
     matchLabels:
       app: tea
-  template: 
+  template:
     metadata:
       labels:
         app: tea

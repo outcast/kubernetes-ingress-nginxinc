@@ -5,8 +5,11 @@ from kubernetes.client.rest import ApiException
 from settings import TEST_DATA
 from suite.custom_assertions import assert_event_and_get_count, assert_event_count_increased, assert_response_codes, \
     assert_event, assert_event_starts_with_text_and_contains_errors, assert_vs_conf_not_exists
-from suite.custom_resources_utils import get_vs_nginx_template_conf, patch_virtual_server_from_yaml, \
-    patch_virtual_server, generate_item_with_upstream_options
+from suite.vs_vsr_resources_utils import get_vs_nginx_template_conf, patch_virtual_server_from_yaml, \
+    patch_virtual_server
+from suite.custom_resources_utils import (
+    generate_item_with_upstream_options,
+)
 from suite.resources_utils import get_first_pod_name, wait_before_test, replace_configmap_from_yaml, get_events
 
 
@@ -251,15 +254,15 @@ class TestVirtualServerUpstreamOptionValidation:
                                      crd_ingress_controller, virtual_server_setup):
         ic_pod_name = get_first_pod_name(kube_apis.v1, ingress_controller_prerequisites.namespace)
         invalid_fields = [
-            "upstreams.lb-method", "upstreams.fail-timeout",
-            "upstreams.max-fails", "upstreams.connect-timeout",
-            "upstreams.read-timeout", "upstreams.send-timeout",
-            "upstreams.keepalive", "upstreams.max-conns",
-            "upstreams.next-upstream",
-            "upstreams.next-upstream-timeout", "upstreams.next-upstream-tries",
-            "upstreams.client-max-body-size",
-            "upstreams.buffers.number", "upstreams.buffers.size", "upstreams.buffer-size",
-            "upstreams.buffering", "upstreams.tls"
+            "lb-method", "fail-timeout",
+            "max-fails", "connect-timeout",
+            "read-timeout", "send-timeout",
+            "keepalive", "max-conns",
+            "next-upstream",
+            "next-upstream-timeout", "next-upstream-tries",
+            "client-max-body-size",
+            "buffers.number", "buffers.size", "buffer-size",
+            "buffering", "tls"
         ]
         config_old = get_vs_nginx_template_conf(kube_apis.v1,
                                                 virtual_server_setup.namespace,
@@ -299,16 +302,17 @@ class TestVirtualServerUpstreamOptionValidation:
 class TestOptionsSpecificForPlus:
     @pytest.mark.parametrize('options, expected_strings', [
         ({"lb-method": "least_conn",
-          "healthCheck": {"enable": True, "port": 8080},
+          "healthCheck": {"enable": True, "mandatory": True, "persistent": True},
           "slow-start": "3h",
           "queue": {"size": 100},
+          "ntlm": True,
           "sessionCookie": {"enable": True,
                             "name": "TestCookie",
                             "path": "/some-valid/path",
                             "expires": "max",
                             "domain": "virtual-server-route.example.com", "httpOnly": True, "secure": True}},
-         ["health_check uri=/ port=8080 interval=5s jitter=0s", "fails=1 passes=1;",
-          "slow_start=3h", "queue 100 timeout=60s;",
+         ["health_check uri=/ interval=5s jitter=0s", "fails=1 passes=1", "mandatory persistent", ";",
+          "slow_start=3h", "queue 100 timeout=60s;", "ntlm;",
           "sticky cookie TestCookie expires=max domain=virtual-server-route.example.com httponly secure path=/some-valid/path;"]),
         ({"lb-method": "least_conn",
           "healthCheck": {"enable": True, "path": "/health",
@@ -318,12 +322,12 @@ class TestOptionsSpecificForPlus:
                           "connect-timeout": "35s", "read-timeout": "45s", "send-timeout": "55s",
                           "headers": [{"name": "Host", "value": "virtual-server.example.com"}]},
           "queue": {"size": 1000, "timeout": "66s"},
-          "slow-start": "0s"},
+          "slow-start": "0s", "ntlm": True},
          ["health_check uri=/health port=8080 interval=15s jitter=3", "fails=2 passes=2 match=",
           "proxy_pass https://vs", "status 200;",
           "proxy_connect_timeout 35s;", "proxy_read_timeout 45s;", "proxy_send_timeout 55s;",
           'proxy_set_header Host "virtual-server.example.com";',
-          "slow_start=0s", "queue 1000 timeout=66s;"])
+          "slow_start=0s", "queue 1000 timeout=66s;", "ntlm;"])
 
     ])
     def test_config_and_events(self, kube_apis, ingress_controller_prerequisites,
@@ -393,7 +397,8 @@ class TestOptionsSpecificForPlus:
             "upstreams[0].healthCheck.connect-timeout",
             "upstreams[0].healthCheck.read-timeout", "upstreams[0].healthCheck.send-timeout",
             "upstreams[0].healthCheck.headers[0].name", "upstreams[0].healthCheck.headers[0].value",
-            "upstreams[0].healthCheck.statusMatch",
+            "upstreams[0].healthCheck.statusMatch", "upstreams[0].healthCheck.grpcStatus",
+            "upstreams[0].healthCheck.grpcService", "upstreams[0].healthCheck.mandatory",
             "upstreams[0].slow-start",
             "upstreams[0].queue.size", "upstreams[0].queue.timeout",
             "upstreams[0].sessionCookie.name", "upstreams[0].sessionCookie.path",
@@ -428,18 +433,17 @@ class TestOptionsSpecificForPlus:
                                      crd_ingress_controller, virtual_server_setup):
         ic_pod_name = get_first_pod_name(kube_apis.v1, ingress_controller_prerequisites.namespace)
         invalid_fields = [
-            "upstreams.healthCheck.enable", "upstreams.healthCheck.path",
-            "upstreams.healthCheck.interval", "upstreams.healthCheck.jitter",
-            "upstreams.healthCheck.fails", "upstreams.healthCheck.passes",
-            "upstreams.healthCheck.port", "upstreams.healthCheck.connect-timeout",
-            "upstreams.healthCheck.read-timeout", "upstreams.healthCheck.send-timeout",
-            "upstreams.healthCheck.headers.name", "upstreams.healthCheck.headers.value",
-            "upstreams.healthCheck.statusMatch",
-            "upstreams.slow-start",
-            "upstreams.queue.size", "upstreams.queue.timeout",
-            "upstreams.sessionCookie.name", "upstreams.sessionCookie.path",
-            "upstreams.sessionCookie.expires", "upstreams.sessionCookie.domain",
-            "upstreams.sessionCookie.httpOnly", "upstreams.sessionCookie.secure"
+            "healthCheck.enable", "healthCheck.path",
+            "healthCheck.interval", "healthCheck.jitter",
+            "healthCheck.fails", "healthCheck.passes",
+            "healthCheck.port", "healthCheck.connect-timeout",
+            "healthCheck.read-timeout", "healthCheck.send-timeout",
+            "healthCheck.statusMatch",
+            "slow-start",
+            "queue.size", "queue.timeout",
+            "sessionCookie.name", "sessionCookie.path",
+            "sessionCookie.expires", "sessionCookie.domain",
+            "sessionCookie.httpOnly", "sessionCookie.secure"
         ]
         config_old = get_vs_nginx_template_conf(kube_apis.v1,
                                                 virtual_server_setup.namespace,

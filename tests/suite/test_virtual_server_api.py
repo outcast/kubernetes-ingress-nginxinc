@@ -12,7 +12,7 @@ from suite.resources_utils import scale_deployment
 @pytest.mark.skip_for_nginx_oss
 @pytest.mark.parametrize('crd_ingress_controller, virtual_server_setup',
                          [({"type": "complete", "extra_args": ["-enable-custom-resources",
-                                                               "-nginx-status-allow-cidrs=0.0.0.0/0"]},
+                                                               "-nginx-status-allow-cidrs=0.0.0.0/0,::/0"]},
                            {"example": "virtual-server-dynamic-configuration", "app_type": "simple"})],
                          indirect=True)
 class TestVSNginxPlusApi:
@@ -23,9 +23,9 @@ class TestVSNginxPlusApi:
         initial_reloads_count = get_nginx_generation_value(req_url)
         upstream_servers_url = f"{req_url}/api/{NGINX_API_VERSION}/http/upstreams/{vs_upstream}/servers"
         print("Scale BE deployment")
-        scale_deployment(kube_apis.apps_v1_api, "backend2", virtual_server_setup.namespace, 0)
+        scale_deployment(kube_apis.v1, kube_apis.apps_v1_api, "backend2", virtual_server_setup.namespace, 0)
         wait_for_empty_array(upstream_servers_url)
-        scale_deployment(kube_apis.apps_v1_api, "backend2", virtual_server_setup.namespace, 1)
+        scale_deployment(kube_apis.v1, kube_apis.apps_v1_api, "backend2", virtual_server_setup.namespace, 1)
         wait_for_non_empty_array(upstream_servers_url)
 
         print("Run checks:")

@@ -7,14 +7,20 @@ import (
 // JWTKeyAnnotation is the annotation where the Secret with a JWK is specified.
 const JWTKeyAnnotation = "nginx.com/jwt-key"
 
+// BasicAuthSecretAnnotation is the annotation where the Secret with the HTTP basic user list
+const BasicAuthSecretAnnotation = "nginx.org/basic-auth-secret" // #nosec G101
+
 // AppProtectPolicyAnnotation is where the NGINX App Protect policy is specified
 const AppProtectPolicyAnnotation = "appprotect.f5.com/app-protect-policy"
 
 // AppProtectLogConfAnnotation is where the NGINX AppProtect Log Configuration is specified
 const AppProtectLogConfAnnotation = "appprotect.f5.com/app-protect-security-log"
 
-// AppProtectLogConfDstAnnotation is where the NGINX AppProtect Log Configuration is specified
+// AppProtectLogConfDstAnnotation is where the NGINX AppProtect Log Configuration destination is specified
 const AppProtectLogConfDstAnnotation = "appprotect.f5.com/app-protect-security-log-destination"
+
+// AppProtectDosProtectedAnnotation is the namespace/name reference of a DosProtectedResource
+const AppProtectDosProtectedAnnotation = "appprotectdos.f5.com/app-protect-dos-resource"
 
 // nginxMeshInternalRoute specifies if the ingress resource is an internal route.
 const nginxMeshInternalRouteAnnotation = "nsm.nginx.com/internal-route"
@@ -46,6 +52,7 @@ var minionBlacklist = map[string]bool{
 	"appprotect.f5.com/app_protect_policy":              true,
 	"appprotect.f5.com/app_protect_security_log_enable": true,
 	"appprotect.f5.com/app_protect_security_log":        true,
+	"appprotectdos.f5.com/app-protect-dos-resource":     true,
 }
 
 var minionInheritanceList = map[string]bool{
@@ -66,7 +73,7 @@ var minionInheritanceList = map[string]bool{
 	"nginx.org/fail-timeout":             true,
 }
 
-func parseAnnotations(ingEx *IngressEx, baseCfgParams *ConfigParams, isPlus bool, hasAppProtect bool, enableInternalRoutes bool) ConfigParams {
+func parseAnnotations(ingEx *IngressEx, baseCfgParams *ConfigParams, isPlus bool, hasAppProtect bool, hasAppProtectDos bool, enableInternalRoutes bool) ConfigParams {
 	cfgParams := *baseCfgParams
 
 	if lbMethod, exists := ingEx.Ingress.Annotations["nginx.org/lb-method"]; exists {
@@ -248,7 +255,7 @@ func parseAnnotations(ingEx *IngressEx, baseCfgParams *ConfigParams, isPlus bool
 			}
 
 			if parsingErrors {
-				glog.Errorf("Ingress %s/%s: There are configuration issues with hsts annotations, skipping annotions for all hsts settings", ingEx.Ingress.GetNamespace(), ingEx.Ingress.GetName())
+				glog.Errorf("Ingress %s/%s: There are configuration issues with hsts annotations, skipping annotations for all hsts settings", ingEx.Ingress.GetNamespace(), ingEx.Ingress.GetName())
 			} else {
 				cfgParams.HSTS = hsts
 				if existsMA {
@@ -293,6 +300,13 @@ func parseAnnotations(ingEx *IngressEx, baseCfgParams *ConfigParams, isPlus bool
 		if jwtLoginURL, exists := ingEx.Ingress.Annotations["nginx.com/jwt-login-url"]; exists {
 			cfgParams.JWTLoginURL = jwtLoginURL
 		}
+	}
+
+	if basicSecret, exists := ingEx.Ingress.Annotations[BasicAuthSecretAnnotation]; exists {
+		cfgParams.BasicAuthSecret = basicSecret
+	}
+	if basicRealm, exists := ingEx.Ingress.Annotations["nginx.org/basic-auth-realm"]; exists {
+		cfgParams.BasicAuthRealm = basicRealm
 	}
 
 	if values, exists := ingEx.Ingress.Annotations["nginx.org/listen-ports"]; exists {
@@ -372,6 +386,11 @@ func parseAnnotations(ingEx *IngressEx, baseCfgParams *ConfigParams, isPlus bool
 			}
 		}
 
+	}
+	if hasAppProtectDos {
+		if appProtectDosResource, exists := ingEx.Ingress.Annotations["appprotectdos.f5.com/app-protect-dos-resource"]; exists {
+			cfgParams.AppProtectDosResource = appProtectDosResource
+		}
 	}
 	if enableInternalRoutes {
 		if spiffeServerCerts, exists, err := GetMapKeyAsBool(ingEx.Ingress.Annotations, nginxMeshInternalRouteAnnotation, ingEx.Ingress); exists {

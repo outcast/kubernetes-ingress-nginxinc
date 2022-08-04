@@ -39,7 +39,6 @@ type Upstream struct {
 // UpstreamServer describes a server in an NGINX upstream.
 type UpstreamServer struct {
 	Address     string
-	Port        string
 	MaxFails    int
 	MaxConns    int
 	FailTimeout string
@@ -91,14 +90,24 @@ type Server struct {
 	RealIPRecursive bool
 
 	JWTAuth              *JWTAuth
+	BasicAuth            *BasicAuth
 	JWTRedirectLocations []JWTRedirectLocation
 
-	Ports               []int
-	SSLPorts            []int
-	AppProtectEnable    string
-	AppProtectPolicy    string
-	AppProtectLogConfs  []string
-	AppProtectLogEnable string
+	Ports                        []int
+	SSLPorts                     []int
+	AppProtectEnable             string
+	AppProtectPolicy             string
+	AppProtectLogConfs           []string
+	AppProtectLogEnable          string
+	AppProtectDosEnable          string
+	AppProtectDosPolicyFile      string
+	AppProtectDosLogConfFile     string
+	AppProtectDosLogEnable       bool
+	AppProtectDosMonitorURI      string
+	AppProtectDosMonitorProtocol string
+	AppProtectDosMonitorTimeout  uint64
+	AppProtectDosName            string
+	AppProtectDosAccessLogDst    string
 
 	SpiffeCerts bool
 }
@@ -107,6 +116,12 @@ type Server struct {
 type JWTRedirectLocation struct {
 	Name     string
 	LoginURL string
+}
+
+// BasicAuth holds HTTP Basic authentication parameters
+type BasicAuth struct {
+	Realm  string
+	Secret string
 }
 
 // JWTAuth holds JWT authentication configuration.
@@ -136,6 +151,7 @@ type Location struct {
 	ProxyMaxTempFileSize string
 	ProxySSLName         string
 	JWTAuth              *JWTAuth
+	BasicAuth            *BasicAuth
 	ServiceName          string
 
 	MinionIngress *Ingress
@@ -197,10 +213,14 @@ type MainConfig struct {
 	AppProtectCookieSeed               string
 	AppProtectCPUThresholds            string
 	AppProtectPhysicalMemoryThresholds string
+	AppProtectReconnectPeriod          string
+	AppProtectDosLoadModule            bool
+	AppProtectDosLogFormat             []string
+	AppProtectDosLogFormatEscaping     string
 	InternalRouteServer                bool
 	InternalRouteServerName            string
 	LatencyMetrics                     bool
-	PreviewPolicies                    bool
+	OIDC                               bool
 }
 
 // NewUpstreamWithDefaultServer creates an upstream with the default server.
@@ -212,8 +232,7 @@ func NewUpstreamWithDefaultServer(name string) Upstream {
 		UpstreamZoneSize: "256k",
 		UpstreamServers: []UpstreamServer{
 			{
-				Address:     "127.0.0.1",
-				Port:        "8181",
+				Address:     "127.0.0.1:8181",
 				MaxFails:    1,
 				MaxConns:    0,
 				FailTimeout: "10s",

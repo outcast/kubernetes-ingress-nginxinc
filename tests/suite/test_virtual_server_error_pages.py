@@ -6,7 +6,7 @@ from kubernetes.client.rest import ApiException
 from suite.custom_assertions import wait_and_assert_status_code, assert_vs_conf_not_exists, \
     assert_event_starts_with_text_and_contains_errors
 from settings import TEST_DATA
-from suite.custom_resources_utils import patch_virtual_server_from_yaml, get_vs_nginx_template_conf
+from suite.vs_vsr_resources_utils import patch_virtual_server_from_yaml, get_vs_nginx_template_conf
 from suite.resources_utils import wait_before_test, get_first_pod_name, get_events
 
 
@@ -87,14 +87,14 @@ class TestVSErrorPages:
                                            virtual_server_setup.namespace)
         except ApiException as ex:
             assert ex.status == 422 \
-                   and "spec.routes.errorPages.codes" in ex.body \
-                   and "spec.routes.errorPages.redirect.code" in ex.body \
-                   and "spec.routes.errorPages.redirect.url" in ex.body \
-                   and "spec.routes.errorPages.return.code" in ex.body \
-                   and "spec.routes.errorPages.return.type" in ex.body \
-                   and "spec.routes.errorPages.return.body" in ex.body \
-                   and "spec.routes.errorPages.return.headers.name" in ex.body \
-                   and "spec.routes.errorPages.return.headers.value" in ex.body
+                   and "codes in body must be of type" in ex.body \
+                   and "redirect.code in body must be of type" in ex.body \
+                   and "redirect.url in body must be of type" in ex.body \
+                   and "return.code in body must be of type" in ex.body \
+                   and "return.type in body must be of type" in ex.body \
+                   and "return.body in body must be of type" in ex.body \
+                   and "name in body must be of type" in ex.body \
+                   and "value in body must be of type" in ex.body
         except Exception as ex:
             pytest.fail(f"An unexpected exception is raised: {ex}")
         else:

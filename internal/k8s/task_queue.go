@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nginxinc/kubernetes-ingress/pkg/apis/dos/v1beta1"
+
 	"github.com/golang/glog"
 	"github.com/nginxinc/kubernetes-ingress/internal/k8s/appprotect"
+	"github.com/nginxinc/kubernetes-ingress/internal/k8s/appprotectdos"
 	conf_v1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1"
 	conf_v1alpha1 "github.com/nginxinc/kubernetes-ingress/pkg/apis/configuration/v1alpha1"
 	v1 "k8s.io/api/core/v1"
-	networking "k8s.io/api/networking/v1beta1"
+	networking "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
@@ -118,6 +121,9 @@ const (
 	appProtectPolicy
 	appProtectLogConf
 	appProtectUserSig
+	appProtectDosPolicy
+	appProtectDosLogConf
+	appProtectDosProtectedResource
 	ingressLink
 )
 
@@ -151,6 +157,8 @@ func newTask(key string, obj interface{}) (task, error) {
 		k = globalConfiguration
 	case *conf_v1alpha1.TransportServer:
 		k = transportserver
+	case *v1beta1.DosProtectedResource:
+		k = appProtectDosProtectedResource
 	case *unstructured.Unstructured:
 		if objectKind := obj.(*unstructured.Unstructured).GetKind(); objectKind == appprotect.PolicyGVK.Kind {
 			k = appProtectPolicy
@@ -160,6 +168,10 @@ func newTask(key string, obj interface{}) (task, error) {
 			k = ingressLink
 		} else if objectKind == appprotect.UserSigGVK.Kind {
 			k = appProtectUserSig
+		} else if objectKind == appprotectdos.DosPolicyGVK.Kind {
+			k = appProtectDosPolicy
+		} else if objectKind == appprotectdos.DosLogConfGVK.Kind {
+			k = appProtectDosLogConf
 		} else {
 			return task{}, fmt.Errorf("Unknown unstructured kind: %v", objectKind)
 		}

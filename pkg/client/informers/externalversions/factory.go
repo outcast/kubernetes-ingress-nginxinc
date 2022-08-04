@@ -9,6 +9,8 @@ import (
 
 	versioned "github.com/nginxinc/kubernetes-ingress/pkg/client/clientset/versioned"
 	configuration "github.com/nginxinc/kubernetes-ingress/pkg/client/informers/externalversions/configuration"
+	dos "github.com/nginxinc/kubernetes-ingress/pkg/client/informers/externalversions/dos"
+	externaldns "github.com/nginxinc/kubernetes-ingress/pkg/client/informers/externalversions/externaldns"
 	internalinterfaces "github.com/nginxinc/kubernetes-ingress/pkg/client/informers/externalversions/internalinterfaces"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -157,8 +159,18 @@ type SharedInformerFactory interface {
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
 	K8s() configuration.Interface
+	Appprotectdos() dos.Interface
+	Externaldns() externaldns.Interface
 }
 
 func (f *sharedInformerFactory) K8s() configuration.Interface {
 	return configuration.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Appprotectdos() dos.Interface {
+	return dos.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Externaldns() externaldns.Interface {
+	return externaldns.New(f, f.namespace, f.tweakListOptions)
 }

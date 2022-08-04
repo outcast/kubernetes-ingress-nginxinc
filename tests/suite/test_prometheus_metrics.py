@@ -3,6 +3,13 @@ import requests
 
 from kubernetes.client import V1ContainerPort
 
+from suite.custom_resources_utils import (
+    create_ts_from_yaml,
+    patch_ts_from_yaml,
+    patch_ts, delete_ts,
+    create_gc_from_yaml,
+    delete_gc,
+)
 from suite.resources_utils import (
     ensure_connection_to_public_endpoint,
     create_items_from_yaml,
@@ -49,32 +56,6 @@ def prometheus_secret_setup(request, kube_apis, test_namespace):
 
 
 @pytest.fixture(scope="class")
-def enable_exporter_port(
-    cli_arguments, kube_apis, ingress_controller_prerequisites, ingress_controller
-) -> None:
-    """
-    Set containerPort for Prometheus Exporter.
-
-    :param cli_arguments: context
-    :param kube_apis: client apis
-    :param ingress_controller_prerequisites
-    :param ingress_controller: IC name
-    :return:
-    """
-    namespace = ingress_controller_prerequisites.namespace
-    port = V1ContainerPort(9113, None, None, "prometheus", "TCP")
-    print("------------------------- Enable 9113 port in IC -----------------------------------")
-    body = kube_apis.apps_v1_api.read_namespaced_deployment(ingress_controller, namespace)
-    body.spec.template.spec.containers[0].ports.append(port)
-
-    if cli_arguments["deployment-type"] == "deployment":
-        kube_apis.apps_v1_api.patch_namespaced_deployment(ingress_controller, namespace, body)
-    else:
-        kube_apis.apps_v1_api.patch_namespaced_daemon_set(ingress_controller, namespace, body)
-    wait_until_all_pods_are_ready(kube_apis.v1, namespace)
-
-
-@pytest.fixture(scope="class")
 def ingress_setup(request, kube_apis, ingress_controller_endpoint, test_namespace) -> IngressSetup:
     print("------------------------- Deploy Ingress Example -----------------------------------")
     secret_name = create_secret_from_yaml(
@@ -108,6 +89,7 @@ def ingress_setup(request, kube_apis, ingress_controller_endpoint, test_namespac
     return IngressSetup(req_url, ingress_host)
 
 
+
 @pytest.mark.ingresses
 @pytest.mark.smoke
 class TestPrometheusExporter:
@@ -139,7 +121,6 @@ class TestPrometheusExporter:
         self,
         ingress_controller_endpoint,
         ingress_controller,
-        enable_exporter_port,
         expected_metrics,
         ingress_setup,
     ):  
@@ -173,7 +154,6 @@ class TestPrometheusExporter:
         self,
         ingress_controller_endpoint,
         ingress_controller,
-        enable_exporter_port,
         expected_metrics,
         ingress_setup,
     ):
@@ -206,7 +186,6 @@ class TestPrometheusExporter:
             prometheus_secret_setup,
             ingress_controller_endpoint,
             ingress_controller,
-            enable_exporter_port,
             expected_metrics,
             ingress_setup,
     ):
@@ -229,3 +208,100 @@ class TestPrometheusExporter:
         resp_content = resp.content.decode("utf-8")
         for item in expected_metrics:
             assert item in resp_content
+
+
+@pytest.fixture(scope="class")
+def ts_setup(request, kube_apis, crd_ingress_controller):
+    global_config_file = f"{TEST_DATA}/prometheus/transport-server/global-configuration.yaml"
+
+    gc_resource = create_gc_from_yaml(kube_apis.custom_objects, global_config_file, "nginx-ingress")
+
+    def fin():
+        delete_gc(kube_apis.custom_objects, gc_resource, "nginx-ingress")
+
+    request.addfinalizer(fin)
+
+
+def assert_ts_total_metric(ingress_controller_endpoint, ts_type, value):
+    req_url = f"http://{ingress_controller_endpoint.public_ip}:{ingress_controller_endpoint.metrics_port}/metrics"
+    resp = requests.get(req_url)
+    resp_content = resp.content.decode("utf-8")
+
+    assert resp.status_code == 200, f"Expected 200 code for /metrics but got {resp.status_code}"
+    assert f'nginx_ingress_controller_transportserver_resources_total{{class="nginx",type="{ts_type}"}} {value}' in resp_content
+
+
+@pytest.mark.ts
+@pytest.mark.parametrize(
+    "crd_ingress_controller",
+    [
+        pytest.param(
+            {
+                "type": "complete",
+                "extra_args":
+                    [
+                        "-global-configuration=nginx-ingress/nginx-configuration",
+                        "-enable-tls-passthrough",
+                        "-enable-prometheus-metrics"
+                    ]
+            },
+        )
+    ],
+    indirect=True,
+)
+class TestTransportServerMetrics:
+    @pytest.mark.parametrize("ts", [
+        (f"{TEST_DATA}/prometheus/transport-server/passthrough.yaml", "passthrough"),
+        (f"{TEST_DATA}/prometheus/transport-server/tcp.yaml", "tcp"),
+        (f"{TEST_DATA}/prometheus/transport-server/udp.yaml", "udp")
+    ])
+    def test_total_metrics(
+            self,
+            crd_ingress_controller,
+            ts_setup,
+            ingress_controller_endpoint,
+            kube_apis,
+            test_namespace,
+            ts
+    ):
+        """
+        Tests nginx_ingress_controller_transportserver_resources_total metric for a given TransportServer type.
+        """
+        ts_file = ts[0]
+        ts_type = ts[1]
+
+        # initially, the number of TransportServers is 0
+
+        assert_ts_total_metric(ingress_controller_endpoint, ts_type, 0)
+
+        # create a TS and check the metric is 1
+
+        ts_resource = create_ts_from_yaml(kube_apis.custom_objects, ts_file, test_namespace)
+        wait_before_test()
+
+        assert_ts_total_metric(ingress_controller_endpoint, ts_type, 1)
+
+        # make the TS invalid and check the metric is 0
+
+        ts_resource["spec"]["listener"]["protocol"] = "invalid"
+
+        patch_ts(kube_apis.custom_objects, test_namespace, ts_resource)
+        wait_before_test()
+
+        assert_ts_total_metric(ingress_controller_endpoint, ts_type, 0)
+
+        # restore the TS and check the metric is 1
+
+        patch_ts_from_yaml(
+            kube_apis.custom_objects, ts_resource["metadata"]["name"], ts_file, test_namespace
+        )
+        wait_before_test()
+
+        assert_ts_total_metric(ingress_controller_endpoint, ts_type, 1)
+
+        # delete the TS and check the metric is 0
+
+        delete_ts(kube_apis.custom_objects, ts_resource, test_namespace)
+        wait_before_test()
+
+        assert_ts_total_metric(ingress_controller_endpoint, ts_type, 0)
